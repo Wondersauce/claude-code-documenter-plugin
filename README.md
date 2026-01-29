@@ -4,14 +4,10 @@ A Claude Code plugin that generates and maintains comprehensive codebase documen
 
 ## Installation
 
-```bash
-claude plugin install --source github --repo YOUR_ORG/codebase-documenter
-```
-
-Or inside Claude Code:
+Inside Claude Code, run:
 
 ```
-/plugin install YOUR_ORG/codebase-documenter
+/plugin install Wondersauce/claude-code-documenter-plugin
 ```
 
 ## Usage
