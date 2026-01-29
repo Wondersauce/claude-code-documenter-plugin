@@ -1,5 +1,5 @@
 {
-  "name": "codebase-documenter",
+  "name": "ws-codebase-documenter",
   "version": "1.0.0",
   "description": "Generate and maintain comprehensive codebase documentation optimized for AI consumption. Supports Node.js/TypeScript, Python, Go, Rust, .NET, Java, and PHP projects with optional Docusaurus sync.",
   "author": {
