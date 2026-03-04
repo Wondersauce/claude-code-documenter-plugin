@@ -6,15 +6,15 @@
   },
   "metadata": {
     "description": "Wondersauce built skills for Claude Code",
-    "version": "2.0.0"
+    "version": "2.1.0"
   },
   "plugins": [
     {
-      "name": "ws-codebase-documenter",
+      "name": "ws-coding-workflows",
       "source": "./",
-      "description": "Generate and maintain comprehensive codebase documentation with prescriptive guides, consistency checking, and frontend-aware scanning",
-      "version": "2.0.0",
-      "keywords": ["documentation", "api-docs", "ai-documentation", "codebase", "style-guide", "consistency-checking"],
+      "description": "AI-powered development orchestration with plan-build-verify-document lifecycle, task decomposition, pattern-locked implementation, independent verification, and structured documentation generation",
+      "version": "2.1.0",
+      "keywords": ["orchestration", "documentation", "ai-documentation", "codebase", "session-management", "dev-lifecycle", "planning", "verification"],
       "license": "MIT"
     }
   ]

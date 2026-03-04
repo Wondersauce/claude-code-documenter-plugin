@@ -1,12 +1,13 @@
 {
-  "name": "ws-codebase-documenter",
-  "version": "2.0.0",
-  "description": "Generate and maintain comprehensive codebase documentation optimized for AI consumption. Produces prescriptive guides (playbook, capability map, style guide, integration map), runs consistency checks against detected patterns, and supports frontend-aware scanning. Works with Node.js/TypeScript, Python, Go, Rust, .NET, Java, and PHP projects with optional Docusaurus sync.",
+  "name": "ws-coding-workflows",
+  "version": "2.1.0",
+  "description": "AI-powered development orchestration for Claude Code. Includes ws-orchestrator (plan-build-verify-document lifecycle), ws-planner (structured task decomposition), ws-dev (pattern-locked implementation with frontend/backend/fullstack support), ws-verifier (independent output verification), and ws-codebase-documenter (documentation generation with prescriptive guides and consistency checking). Works with Node.js/TypeScript, Python, Go, Rust, .NET, Java, and PHP projects.",
   "author": {
     "name": "Wondersauce",
     "email": "marc@wondersauce.com"
   },
   "keywords": [
+    "orchestration",
     "documentation",
     "api-docs",
     "docusaurus",
@@ -14,7 +15,9 @@
     "codebase",
     "style-guide",
     "consistency-checking",
-    "frontend-scanning"
+    "frontend-scanning",
+    "session-management",
+    "dev-lifecycle"
   ],
   "license": "MIT",
   "skills": "./skills/"
