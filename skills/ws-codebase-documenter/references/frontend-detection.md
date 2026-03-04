@@ -24,12 +24,36 @@ Run this procedure **before** all other detection procedures.
    - `lerna.json`
    - `nx.json`
    - `pnpm-workspace.yaml`
-2. If a monorepo indicator is detected AND `config.frontend.css_paths` is empty:
-   - Skip auto-detection of CSS/JS paths
-   - Log: `"Monorepo detected. Set frontend.css_paths and frontend.js_paths in config.json to specify which workspace to scan."`
-   - Set all frontend detection results to empty/null
-   - Stop. Do not run any further procedures.
-3. If `config.frontend.css_paths` IS set, proceed normally even in a monorepo.
+2. If no monorepo indicator is detected, proceed normally with all detection procedures.
+3. If `config.frontend.css_paths` IS set, proceed normally even in a monorepo — the user has explicitly scoped the scan.
+4. If a monorepo is detected AND `config.frontend.css_paths` is empty, attempt to auto-detect the primary frontend workspace:
+
+   a. Resolve the workspace directories:
+      - `package.json` workspaces: expand the `workspaces` glob patterns (e.g., `packages/*`, `apps/*`)
+      - `pnpm-workspace.yaml`: read the `packages` list
+      - `lerna.json`: read the `packages` list
+      - `nx.json`: list directories containing `project.json` or listed in `workspace.json`
+
+   b. For each workspace directory, read its `package.json` and check `dependencies` + `devDependencies` for frontend framework indicators:
+
+   | Indicator Package | Framework |
+   |-------------------|-----------|
+   | `react`, `react-dom` | React |
+   | `next` | Next.js |
+   | `vue` | Vue |
+   | `nuxt` | Nuxt |
+   | `svelte`, `@sveltejs/kit` | Svelte |
+   | `@angular/core` | Angular |
+   | `solid-js` | Solid |
+   | `astro` | Astro |
+
+   c. Count how many workspaces have at least one frontend indicator.
+
+   d. **Exactly one workspace found**: Use it as the frontend root. Set the scan scope to that workspace directory and proceed with all detection procedures scoped to it. Log: `"Monorepo detected. Auto-selected workspace '{workspace_name}' as frontend root."`
+
+   e. **Zero workspaces found**: No frontend detected. Set all frontend detection results to empty/null. Log: `"Monorepo detected. No frontend workspace found. Set frontend.enabled to false in config.json, or set frontend.css_paths manually."` Stop.
+
+   f. **Multiple workspaces found**: Ambiguous — do not guess. Set all frontend detection results to empty/null. Log: `"Monorepo detected with multiple frontend workspaces: {list}. Set frontend.css_paths and frontend.js_paths in config.json to specify which workspace to scan."` Stop.
 
 ---
 
