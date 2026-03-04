@@ -389,6 +389,8 @@ The verifier returns:
 Task(ws-codebase-documenter) with mode=incremental
 ```
 
+**Note:** ws-codebase-documenter maintains its own state at `documentation/.docstate` and `documentation/config.json` — it does not use `.ws-session/documenter.json`. Do not attempt to read documenter state from `.ws-session/`.
+
 ### 6.2 Evaluate result
 
 - If documentation updated successfully: continue
