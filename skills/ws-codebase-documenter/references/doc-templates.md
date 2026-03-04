@@ -746,7 +746,7 @@ Include Consistency Check section only when `config.consistency_check.enabled` i
 
 Path: `documentation/playbook.md`
 
-```markdown
+````markdown
 # Development Playbook
 
 > Step-by-step procedures for common development tasks in this project.
@@ -772,9 +772,9 @@ Before adding any new functionality:
 
 ### Template
 
-\```[language]
+```[language]
 [Boilerplate code that follows the pattern]
-\```
+```
 
 ### Checklist
 
@@ -790,7 +790,7 @@ Before adding any new functionality:
 ---
 
 [Repeat for each detected pattern]
-```
+````
 
 Notes:
 - Generate one "Adding a New [X]" section for each design pattern detected in `architecture.md`
@@ -932,7 +932,7 @@ Notes:
 
 Path: `documentation/integration-map.md`
 
-```markdown
+````markdown
 # Cross-Module Integration Map
 
 > How modules communicate with each other in this project.
@@ -950,9 +950,9 @@ Path: `documentation/integration-map.md`
 **Context**: [When/why Module A calls Module B]
 
 **Pattern**:
-\```[language]
+```[language]
 [Code showing the correct way to make this call]
-\```
+```
 
 **Data Contract**:
 | Parameter | Type | Description |
@@ -972,7 +972,7 @@ Path: `documentation/integration-map.md`
 | Event/Hook | Emitted By | Listened By | Data Payload |
 |-----------|-----------|------------|--------------|
 | [event name] | [Module] | [Module(s)] | [Data type/shape] |
-```
+````
 
 Notes:
 - Module boundaries are detected by namespace/package/directory structure.
