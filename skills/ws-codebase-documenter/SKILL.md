@@ -38,7 +38,7 @@ Check for these files in order:
 
 #### 2.2 Create Config
 
-Write `documentation/config.json`:
+Write a single `documentation/config.json` file containing all fields:
 
 ```json
 {
@@ -57,27 +57,7 @@ Write `documentation/config.json`:
   ],
   "include_inline_examples": true,
   "include_architecture_diagrams": true,
-  "docusaurus": null
-}
-```
-
-If Docusaurus sync is requested, set the `docusaurus` field:
-
-```json
-{
-  "docusaurus": {
-    "repo": "git@github.com:org/docs-site.git",
-    "branch": "main",
-    "docs_path": "docs/api",
-    "sidebar_label": "API Reference"
-  }
-}
-```
-
-If this is a new bootstrap, also include the enhanced feature configuration with defaults:
-
-```json
-{
+  "docusaurus": null,
   "frontend": {
     "enabled": true,
     "css_paths": [],
@@ -114,7 +94,20 @@ If this is a new bootstrap, also include the enhanced feature configuration with
 }
 ```
 
-All new fields are optional — existing `config.json` files without these fields use the defaults shown above.
+If Docusaurus sync is requested, set the `docusaurus` field:
+
+```json
+{
+  "docusaurus": {
+    "repo": "git@github.com:org/docs-site.git",
+    "branch": "main",
+    "docs_path": "docs/api",
+    "sidebar_label": "API Reference"
+  }
+}
+```
+
+All fields from `frontend` onward are optional — existing `config.json` files without these fields use the defaults shown above.
 
 #### 2.2b Backfill Config
 
