@@ -34,7 +34,7 @@ To regenerate a specific document without a full re-run:
 /ws-codebase-documenter regenerate all
 ```
 
-Valid regenerate targets: `playbook`, `capability-map`, `style-guide`, `integration-map`, `overview`, `architecture`, `all`
+Valid regenerate targets: `playbook`, `capability-map`, `style-guide`, `integration-map`, `overview`, `architecture`, `consistency-report`, `all`
 
 ## What It Does
 

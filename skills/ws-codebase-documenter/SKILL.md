@@ -390,7 +390,7 @@ Update `documentation/.docstate` with new HEAD and timestamp.
 
 Execute when user runs with `regenerate [doc-type]`.
 
-Valid doc-types: `playbook`, `capability-map`, `style-guide`, `integration-map`, `overview`, `architecture`, `all`
+Valid doc-types: `playbook`, `capability-map`, `style-guide`, `integration-map`, `overview`, `architecture`, `consistency-report`, `all`
 
 #### 3b.1 Determine Scan Scope
 
@@ -404,6 +404,7 @@ Each doc type requires a different scan scope:
 | `integration-map` | Cross-module scan (step 2.4, item 7) |
 | `overview` | Basic scan (step 2.4, items 1-3) |
 | `architecture` | Full scan (step 2.4, items 1-5) |
+| `consistency-report` | No scan — run consistency check (step 3.4.5) against current HEAD using existing `.docstate` patterns |
 | `all` | Full scan (all of step 2.4) |
 
 #### 3b.2 Load Config and State

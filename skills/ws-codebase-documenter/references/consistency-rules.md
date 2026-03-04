@@ -552,6 +552,18 @@ Check if event name is documented in `documentation/integration-map.md`.
 
 Step-by-step procedure called from SKILL.md step 3.4.5.
 
+### Quick Reference Checklist
+
+Use this checklist to track progress through the procedure:
+
+1. **Load context** — read `.docstate`, `config.json`, and generated docs (capability-map, style-guide, integration-map)
+2. **Get changed files** — `git diff --name-status [last_commit]..HEAD`
+3. **Select rules** — match rules to file types, filter out rules with missing dependencies
+4. **Execute rules** — run each applicable rule's detection procedure against each changed file
+5. **Assign severity** — apply `config.consistency_check.strict` to determine Error vs Warning
+6. **Generate report** — write `documentation/.consistency-report.md`
+7. **Return results** — format violation table for PR description
+
 ### Step 1: Load Context
 
 Read the following files and extract required data:
