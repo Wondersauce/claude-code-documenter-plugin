@@ -191,7 +191,7 @@ Generate files:
 
 Create or update `CLAUDE.md` in the project root to reference the documentation. If the file exists, append to it; otherwise create it.
 
-Add these sections:
+**Step A**: If `config.claude_md.inject_rules` is `true` (default), add the Project Rules section:
 
 ```markdown
 ## Project Rules
@@ -215,7 +215,20 @@ These rules MUST be followed when modifying this codebase:
 ### Documentation
 - After adding new public functions, types, or components, update the relevant documentation files
 - After adding new cross-module integrations, update `documentation/integration-map.md`
+```
 
+Extract project-specific rules to populate the subsections above (max `config.claude_md.max_rules`, default 25). Priority order when candidates exceed the limit:
+1. `config.claude_md.custom_rules` — user-defined rules, always included first
+2. Architecture rules from `architecture.md` and `playbook.md`
+3. Data access rules from detected Model/Repository patterns
+4. Frontend rules from `style-guide.md` (when applicable)
+5. Documentation maintenance rules
+
+If `config.claude_md.inject_rules` is `false`, skip Step A entirely.
+
+**Step B**: Always add the Codebase Documentation section:
+
+```markdown
 ## Codebase Documentation
 
 This project has AI-optimized documentation in the `documentation/` folder.
@@ -237,15 +250,6 @@ When adding new public APIs:
 - Ensure consistency with existing APIs in `documentation/public/`
 - Update `documentation/capability-map.md` with the new capability
 ```
-
-Extract project-specific rules to populate the "Project Rules" section (max `config.claude_md.max_rules`, default 25). Priority order for rule selection when candidates exceed the limit:
-1. `config.claude_md.custom_rules` — user-defined rules, always included first
-2. Architecture rules from `architecture.md` and `playbook.md`
-3. Data access rules from detected Model/Repository patterns
-4. Frontend rules from `style-guide.md` (when applicable)
-5. Documentation maintenance rules
-
-If `config.claude_md.inject_rules` is `false`, omit the "Project Rules" section and only include the "Codebase Documentation" section.
 
 #### 2.7 Write State
 
