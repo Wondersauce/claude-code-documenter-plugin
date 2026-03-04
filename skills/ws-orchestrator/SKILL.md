@@ -233,7 +233,11 @@ Approve this plan? [Y / request changes]
 ### 3.5 Handle feedback
 
 If user requests changes:
-1. Re-invoke `Task(ws-planner)` with original task + user feedback
+1. Re-invoke `Task(ws-planner)` with:
+   - task_description: [original task]
+   - task_type, task_area, project: [same as before]
+   - feedback: [user's requested changes]
+   The `feedback` parameter signals ws-planner to enter re-planning mode (Step 0.3) instead of initializing a fresh session.
 2. Return to step 3.2
 
 ### 3.6 Plan approved
@@ -361,7 +365,9 @@ The verifier returns:
    - If `iteration_count < 3` (configurable via `max_iterations`):
      - Increment `iteration_count`
      - Log: `Verification iteration [N]/[max]: [summary of findings]`
-     - Return to Step 4 with the findings attached as `iteration_findings`. Only re-execute tasks that have associated findings — do not re-run tasks that passed verification.
+     - Map findings to tasks, then return to Step 4 with only the affected tasks.
+
+     **Finding-to-task mapping:** For each finding, match its `file` field against each task's `files_to_create` and `files_to_modify` arrays. A finding is associated with a task if the finding's file appears in that task's file lists. If a finding's file doesn't match any task (e.g., an indirect side-effect), associate it with the task whose `files_to_modify` contains the closest parent directory, or with the last-executed task as a fallback. Attach matched findings as `iteration_findings` on each affected task. Do not re-run tasks with zero associated findings.
    - If `iteration_count >= 3`:
      - Present all findings to the user:
        ```
@@ -386,8 +392,12 @@ The verifier returns:
 ### 6.1 Invoke ws-codebase-documenter
 
 ```
-Task(ws-codebase-documenter) with mode=incremental
+Task(ws-codebase-documenter) with:
+  - mode: incremental
+  - skip_pr: true
 ```
+
+**The `skip_pr: true` flag is critical** — it tells ws-codebase-documenter to update documentation files and commit them but NOT create a pull request. Without this flag, the documenter would create its own PR, conflicting with the orchestrator-managed workflow. The orchestrator (or the user) handles PR creation for the entire session.
 
 **Note:** ws-codebase-documenter maintains its own state at `documentation/.docstate` and `documentation/config.json` — it does not use `.ws-session/documenter.json`. Do not attempt to read documenter state from `.ws-session/`.
 

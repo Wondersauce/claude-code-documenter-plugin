@@ -123,7 +123,7 @@ State file rules:
 - Must be valid, human-readable JSON at all times
 - Status enum: `active | paused | complete | blocked | failed` (with skill-specific additions)
 
-**Fullstack session file ownership:** When ws-dev executes a `fullstack` task, it splits into nested `Task()` calls for frontend and backend. The parent ws-dev instance owns `dev.json`. Nested calls do **not** write their own session files — they return structured results to the parent, which records both results in `dev.json`. This prevents file contention.
+**Fullstack session file ownership:** When ws-dev executes a `fullstack` task, it splits into nested `Task()` calls for frontend and backend with `nested: true`. The parent ws-dev instance owns `dev.json`. Nested calls skip all session file operations (Step 0, state updates) and return structured results to the parent, which records both results in `dev.json`. The `nested: true` flag is what prevents file contention — without it, nested calls would attempt to read/write `dev.json` concurrently with the parent.
 
 ### 5.2 Context Window Isolation
 
@@ -209,9 +209,9 @@ plan → build → verify → document
 - **Plan** (Step 3) — `Task(ws-planner)` produces structured Task Definitions. User reviews and approves.
 - **Build** (Step 4) — `Task(ws-dev/[area])` implements tasks in dependency order.
 - **Verify** (Step 5) — `Task(ws-verifier)` independently reviews output.
-- **Document** (Step 6) — `Task(ws-codebase-documenter)` updates project docs. Archive session.
+- **Document** (Step 6) — `Task(ws-codebase-documenter)` with `skip_pr: true` updates project docs without creating a PR. Archive session.
 
-**Iteration loop:** If ws-verifier returns `fail` or `partial`, ws-orchestrator re-sends **only the tasks with associated findings** back to ws-dev (up to 3 iterations by default). Tasks that passed verification are not re-run. If convergence fails, findings are presented to the user for decision.
+**Iteration loop:** If ws-verifier returns `fail` or `partial`, ws-orchestrator maps findings to tasks by matching each finding's `file` field against each task's `files_to_create` and `files_to_modify` arrays, then re-sends **only the tasks with associated findings** back to ws-dev (up to 3 iterations by default). Tasks that passed verification are not re-run. If convergence fails, findings are presented to the user for decision.
 
 #### 6.1.3 Manual Override ([DIRECT])
 
@@ -240,7 +240,7 @@ Given a task description and project documentation, produces fully specified, st
 
 #### Task Definition Format
 
-Each sub-task includes: task_id, title, type, area, description, acceptance_criteria, constraints, files_to_create, files_to_modify, documentation_updates, depends_on, estimated_complexity, playbook_procedure, reuse (with exact import paths), sub_tasks.
+Each sub-task includes: task_id, title, type, area, description, acceptance_criteria, constraints, files_to_create, files_to_modify, documentation_updates, depends_on, estimated_complexity, playbook_procedure, reuse (with exact import paths).
 
 #### Key Behaviors
 
@@ -249,11 +249,13 @@ Each sub-task includes: task_id, title, type, area, description, acceptance_crit
 - Every acceptance criterion must be testable and verifiable by ws-verifier
 - Every file modification references a specific playbook procedure
 - No open architectural decisions left for ws-dev
+- **Blocking ambiguities stop planning immediately** — if the task is too ambiguous to decompose (indeterminate area, contradictory constraints, undefined core requirements), ws-planner returns `status: "partial"` with zero tasks and the ambiguities listed, rather than propagating bad assumptions through decomposition. Non-blocking ambiguities (minor naming, placement preferences) are recorded but don't halt planning.
 
 #### Re-planning with Feedback
 
-When ws-orchestrator re-invokes ws-planner with user feedback:
-1. Read the previous plan from `.ws-session/planner.json`
+When ws-orchestrator re-invokes ws-planner with user feedback, it passes a `feedback` parameter. This signals ws-planner's Step 0 to enter re-planning mode instead of initializing a fresh session (which would wipe the previous plan):
+
+1. Step 0 detects `feedback` parameter and reads the existing `complete` session instead of initializing fresh
 2. Apply adjustments: add/remove/modify tasks, adjust criteria, change granularity, address ambiguities
 3. Re-run validation
 4. Return updated result with history recorded in the `notes` field
@@ -272,7 +274,7 @@ Implements fully-specified tasks from ws-planner. Reads documentation before wri
 
 #### Fullstack Orchestration
 
-For fullstack tasks, ws-dev splits work into backend-first execution (frontend depends on API contracts), then merges results. The parent ws-dev instance owns `dev.json`; nested calls return results only and do not write their own session files.
+For fullstack tasks, ws-dev splits work into backend-first execution (frontend depends on API contracts), then merges results. Nested calls are invoked with `nested: true`, which tells the sub-skill to skip all session file operations. The parent ws-dev instance owns `dev.json`; nested calls return results only.
 
 If the task cannot be cleanly split, ws-dev executes the entire task directly using combined conventions from both frontend and backend layers.
 

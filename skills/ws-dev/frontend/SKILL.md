@@ -53,6 +53,12 @@ These conventions apply to **every** frontend implementation. They are non-negot
 
 ---
 
+## Nested Invocation
+
+When invoked with `nested: true` (from ws-dev fullstack orchestration), skip all session file operations — the parent ws-dev instance owns `.ws-session/dev.json`. Do not read, create, or write session files. Return your structured result directly to the parent.
+
+---
+
 ## Execution Steps
 
 This skill follows the same Step 0–5 lifecycle as ws-dev (see `../SKILL.md`). The steps below highlight frontend-specific behaviors within that lifecycle.
@@ -62,9 +68,21 @@ This skill follows the same Step 0–5 lifecycle as ws-dev (see `../SKILL.md`). 
 In addition to the standard documentation load:
 - **Always** read `documentation/style-guide.md` — this is critical for frontend tasks
 - Read any component-specific documentation referenced in the task definition
-- If the style guide is missing:
-  - Return `status: "blocked"` with `next_action: "Run ws-codebase-documenter to generate style-guide.md before frontend implementation"`
-  - Frontend work without a style guide risks design token violations and styling entropy
+- If the style guide is missing, return immediately:
+  ```json
+  {
+    "skill": "ws-dev",
+    "status": "blocked",
+    "summary": "Cannot implement frontend task — documentation/style-guide.md is missing",
+    "outputs": { "files_changed": [], "checklist": {}, "issues": [] },
+    "issues": [
+      "documentation/style-guide.md not found",
+      "Frontend implementation requires design tokens, CSS methodology, component patterns, and responsive breakpoints from the style guide",
+      "Without it, styling decisions would be arbitrary and likely drift from project conventions"
+    ],
+    "next_action": "Run ws-codebase-documenter in bootstrap mode (or incremental with style_guide.enabled=true) to generate style-guide.md, then retry this task"
+  }
+  ```
 
 ### Step 2 — Pre-implementation Checklist (frontend additions)
 

@@ -49,9 +49,11 @@ For `fullstack` tasks, ws-dev splits the work into frontend and backend componen
 2. Create two derived task definitions:
    - Backend task: data models, API endpoints, services, business logic
    - Frontend task: UI components, client integration, styling
-3. Execute backend first (frontend typically depends on API contracts)
-4. Execute frontend with backend results available
+3. Execute backend first via `Task(ws-dev/backend)` with `nested: true`
+4. Execute frontend via `Task(ws-dev/frontend)` with `nested: true` and backend results available
 5. Merge results from both into a single structured result
+
+**The `nested: true` flag is critical** — it tells the sub-skill to skip all session file operations (Step 0, state updates throughout). Without it, the nested call would try to read/write `.ws-session/dev.json`, conflicting with the parent.
 
 **Session file ownership:** The parent ws-dev instance owns `.ws-session/dev.json`. Nested `Task()` calls for frontend and backend do **not** write their own session files — they return structured results to the parent, which records both results in `dev.json`. This prevents file contention.
 
@@ -64,6 +66,13 @@ If the task cannot be cleanly split:
 ## Step 0 — Session Recovery
 
 Before doing anything else:
+
+**If invoked with `nested: true`** (from fullstack orchestration):
+- Skip all session file operations — the parent ws-dev instance owns `.ws-session/dev.json`
+- Do not read, create, or write session files
+- Proceed directly to Step 1
+
+**Otherwise** (standard invocation from ws-orchestrator):
 
 1. Check for `.ws-session/dev.json`
 2. If found and status is `active` or `paused`:
@@ -97,8 +106,7 @@ The task arrives from ws-orchestrator with the full Task Definition object:
   "depends_on": [],
   "estimated_complexity": "low | medium | high",
   "playbook_procedure": "...",
-  "reuse": [],
-  "sub_tasks": []
+  "reuse": []
 }
 ```
 

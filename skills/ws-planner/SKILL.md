@@ -39,7 +39,12 @@ Before doing anything else:
    a. Read the file completely
    b. Log: `Resuming ws-planner session [session_id], current step: [current_step]`
    c. Continue from `current_step`, skipping `completed_steps`
-3. If not found or status is `complete`:
+3. If found and status is `complete` **and** the invocation includes `feedback`:
+   a. Read the file completely — this is a **re-planning** invocation
+   b. Log: `Re-planning session [session_id] with feedback`
+   c. Set `status` to `"active"`
+   d. Jump directly to the **Re-planning with Feedback** section
+4. If not found or status is `complete` (without feedback):
    a. Initialize a new session file (see Session File Schema below)
    b. Continue with Step 1
 
@@ -123,10 +128,25 @@ From `architecture.md`, identify:
 
 ### 2.3 Flag ambiguities
 
-If the task description is ambiguous or underspecified:
-- List specific questions that would need answers
-- Record in `issues[]` as `"ambiguity: [description]"`
-- Set status to `"partial"` in the result (ws-orchestrator will present to user)
+If the task description is ambiguous or underspecified, classify each ambiguity:
+
+**Blocking ambiguities** — Cannot produce a valid plan without resolution:
+- The task's area (frontend/backend/fullstack) is indeterminate
+- No playbook procedure exists for the task type
+- Constraints contradict each other
+- Core requirements are undefined (e.g., "improve the API" with no specifics)
+
+If **any** blocking ambiguity exists:
+- Record all ambiguities in `issues[]` as `"blocking-ambiguity: [description]"`
+- Return immediately with `status: "partial"`, `outputs: { "tasks": [] }`, and `next_action: "Resolve ambiguities before planning"`
+- **Do not continue to decomposition** — a plan built on unresolved blocking ambiguities propagates bad assumptions downstream
+
+**Non-blocking ambiguities** — Plan can proceed with reasonable defaults:
+- Minor naming decisions
+- Exact file placement when multiple valid locations exist
+- Implementation detail preferences
+
+Record non-blocking ambiguities in `issues[]` as `"ambiguity: [description]"` and continue to Step 3.
 
 ### 2.4 Update session state
 
@@ -205,8 +225,7 @@ Break the task into atomic sub-tasks. Each sub-task should represent a single ws
       "location": "import path",
       "usage_pattern": "how to use"
     }
-  ],
-  "sub_tasks": []
+  ]
 }
 ```
 
@@ -320,8 +339,7 @@ Return to ws-orchestrator:
         "depends_on": [],
         "estimated_complexity": "...",
         "playbook_procedure": "...",
-        "reuse": [],
-        "sub_tasks": []
+        "reuse": []
       }
     ],
     "reuse_summary": {

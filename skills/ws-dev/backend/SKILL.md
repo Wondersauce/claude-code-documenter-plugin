@@ -58,6 +58,12 @@ These conventions apply to **every** backend implementation. They are non-negoti
 
 ---
 
+## Nested Invocation
+
+When invoked with `nested: true` (from ws-dev fullstack orchestration), skip all session file operations — the parent ws-dev instance owns `.ws-session/dev.json`. Do not read, create, or write session files. Return your structured result directly to the parent.
+
+---
+
 ## Execution Steps
 
 This skill follows the same Step 0–5 lifecycle as ws-dev (see `../SKILL.md`). The steps below highlight backend-specific behaviors within that lifecycle.
