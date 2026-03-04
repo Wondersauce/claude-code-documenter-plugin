@@ -305,18 +305,33 @@ Use this schema when adding new rules. Every field is required.
    ```
    { "#3b82f6": { "name": "--color-primary", "aliases": ["$color-primary"] }, "16px": { "name": "--spacing-md" }, ... }
    ```
-2. Get the list of changed CSS/SCSS files
-3. For each file, get the diff hunks and isolate added lines
-4. Extract hex colors from added lines:
+2. Remove trivial values from the token map before matching. Skip any token whose value is in the ignore list:
+
+   **Ignored pixel values** — single-digit (`0px`–`9px`) and common resets:
+   ```
+   0, 0px, 1px, 2px, 3px, 4px, 5px, 6px, 7px, 8px, 9px, 100%, 50%
+   ```
+
+   **Ignored color values** — universally common colors and keywords:
+   ```
+   #000, #000000, #fff, #ffffff, transparent, inherit, currentColor, none
+   ```
+
+   These values are too generic to be meaningful token violations — they appear in virtually every stylesheet regardless of design system intent.
+
+3. Get the list of changed CSS/SCSS files
+4. For each file, get the diff hunks and isolate added lines
+5. Extract hex colors from added lines:
    ```regex
    #[0-9a-fA-F]{3,8}
    ```
-5. Extract pixel values from added lines:
+6. Extract pixel values from added lines:
    ```regex
    \b\d+px\b
    ```
-6. Compare each extracted value against the token map
-7. If an exact match is found, check whether the literal appears inside a `var()` call or references the token name (or any alias). If so, it is already using the token — skip it. Otherwise, flag it.
+7. Discard any extracted value that appears in the ignore list from step 2
+8. Compare each remaining value against the token map
+9. If an exact match is found, check whether the literal appears inside a `var()` call or references the token name (or any alias). If so, it is already using the token — skip it. Otherwise, flag it.
 
 **Violation Condition**: A literal value is used where a token variable exists for that exact value, and the usage does not reference the token or any of its aliases.
 
