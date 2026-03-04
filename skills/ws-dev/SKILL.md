@@ -543,9 +543,13 @@ For each implemented task, record independently:
   "task_id": "...",
   "criteria_results": [],
   "constraint_results": [],
-  "playbook_violations": []
+  "playbook_violations": [],
+  "frontend_checks": [],
+  "backend_checks": []
 }
 ```
+
+> **Sub-skill checks in group mode:** When tasks are implemented via ws-dev/frontend or ws-dev/backend (nested invocations), those sub-skills produce `frontend_checks` and `backend_checks` respectively. In group mode, these checks must be attributed per-task — include them in each task's self-verification record above. If a task does not involve a sub-skill area, omit that field or leave it as an empty array.
 
 Do not aggregate across tasks. ws-verifier requires per-task evidence.
 

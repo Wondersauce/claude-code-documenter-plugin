@@ -209,6 +209,8 @@ For each deviation, create a finding:
 
 ```json
 {
+  "task_id": "the task_id this finding belongs to",
+  "group_id": null,
   "severity": "HIGH | MEDIUM | LOW",
   "domain": "pattern",
   "file": "path/to/file",
@@ -219,6 +221,8 @@ For each deviation, create a finding:
   "recommended_fix": "specific actionable fix"
 }
 ```
+
+> **Note:** `task_id` is always set to the current task's ID. `group_id` is `null` for standard single-task verification; the Group Verification Flow sets it to the group's ID.
 
 ### 3.5 Update session state
 
@@ -251,6 +255,8 @@ For each reuse violation:
 
 ```json
 {
+  "task_id": "the task_id this finding belongs to",
+  "group_id": null,
   "severity": "HIGH | MEDIUM | LOW",
   "domain": "reuse",
   "file": "path/to/file",
@@ -288,6 +294,8 @@ For each constraint violation:
 
 ```json
 {
+  "task_id": "the task_id this finding belongs to",
+  "group_id": null,
   "severity": "HIGH",
   "domain": "constraint",
   "file": "path/to/file",
@@ -329,6 +337,8 @@ For each undocumented item not in the planned updates:
 
 ```json
 {
+  "task_id": "the task_id this finding belongs to",
+  "group_id": null,
   "severity": "MEDIUM",
   "domain": "documentation",
   "file": "path/to/file",
