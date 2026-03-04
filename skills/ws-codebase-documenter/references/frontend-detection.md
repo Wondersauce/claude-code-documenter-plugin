@@ -224,10 +224,26 @@ If multiple indicators match, prefer the one with the strongest signal (highest 
 
    Tokens that do not match any prefix pattern go into an `other` category.
 
-4. Record:
+4. **Deduplicate across SCSS variables and CSS custom properties.** When a project defines both formats (common during SCSS-to-custom-property migrations), resolve conflicts:
+
+   a. For each SCSS variable `$name: value`, check if a CSS custom property `--name: value` exists with:
+      - The same name stem (strip leading `$` / `--` and compare), AND
+      - The same resolved value (after trimming whitespace)
+
+   b. If a match is found, keep **one canonical entry** using this precedence:
+      1. **CSS custom property wins** — it is the modern standard and works at runtime.
+      2. Record the SCSS variable as an alias: `aliases: ["$name"]`
+
+   c. If the names match but values differ, keep **both** as separate tokens — they are not duplicates.
+
+   d. If only one format exists (SCSS-only or custom-property-only), keep it as-is with no alias.
+
+   The canonical token name in the output should use the `--name` form when a custom property exists. The `aliases` field allows the style guide to note both syntaxes and the FE-004 consistency rule to recognize either form as valid usage.
+
+5. Record:
    - `token_files`: list of discovered token file paths
-   - `token_counts`: count per category
-   - `tokens`: full name-value list grouped by category
+   - `token_counts`: count per category (after deduplication)
+   - `tokens`: full name-value list grouped by category. Each entry has `name`, `value`, and optionally `aliases` (list of alternate syntaxes for the same token)
 
 ---
 
@@ -370,7 +386,7 @@ Frontend Scan Results:
 - root_stylesheet: path
 - organization: pattern name
 - methodology: detected methodology
-- tokens: { colors: [...], spacing: [...], typography: [...], breakpoints: [...], shadows: [...], radii: [...], z_index: [...] }
+- tokens: { colors: [{ name, value, aliases? }], spacing: [...], typography: [...], breakpoints: [...], shadows: [...], radii: [...], z_index: [...] }
 - breakpoints: { values: [...], approach: mobile-first|desktop-first }
 - js_entry_points: [{ path, pattern, dependencies }]
 - build_tool: { name, config_path, entry, output }

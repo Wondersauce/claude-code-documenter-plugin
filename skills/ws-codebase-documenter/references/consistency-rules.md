@@ -303,7 +303,7 @@ Use this schema when adding new rules. Every field is required.
 
 1. Load the token value map from `documentation/style-guide.md` or `.docstate`:
    ```
-   { "#3b82f6": "--color-primary", "16px": "--spacing-md", ... }
+   { "#3b82f6": { "name": "--color-primary", "aliases": ["$color-primary"] }, "16px": { "name": "--spacing-md" }, ... }
    ```
 2. Get the list of changed CSS/SCSS files
 3. For each file, get the diff hunks and isolate added lines
@@ -316,11 +316,11 @@ Use this schema when adding new rules. Every field is required.
    \b\d+px\b
    ```
 6. Compare each extracted value against the token map
-7. If an exact match is found, flag it
+7. If an exact match is found, check whether the literal appears inside a `var()` call or references the token name (or any alias). If so, it is already using the token — skip it. Otherwise, flag it.
 
-**Violation Condition**: A literal value is used where a token variable exists for that exact value.
+**Violation Condition**: A literal value is used where a token variable exists for that exact value, and the usage does not reference the token or any of its aliases.
 
-**Fix Template**: "Hardcoded `{value}` at `{file}:{line}` matches token `{token_name}`. Use `{token_var}` instead."
+**Fix Template**: "Hardcoded `{value}` at `{file}:{line}` matches token `{token_name}`. Use `var({token_name})` (CSS) or `{alias}` (SCSS) instead."
 
 ---
 
