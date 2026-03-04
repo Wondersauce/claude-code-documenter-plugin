@@ -119,17 +119,37 @@ Use this schema when adding new rules. Every field is required.
 - **Category**: Architecture
 - **Confidence**: High
 - **Severity**: Error (strict) | Warning
-- **Applies to**: Newly created source files
-- **Requires**: `detected_patterns` directory globs (all entries)
+- **Applies to**: Newly created source files with stack-matching extensions only
+- **Requires**: `detected_patterns` directory globs (all entries), `config.stack`
 
 **Detection Procedure**:
 
 1. Get the list of added files (`A` status) from `git diff --name-status`
-2. For each new file, collect all directory globs from `detected_patterns`
-3. Test the file's path against every glob
-4. If no glob matches the file's directory, flag it
+2. Filter to source code files only — include files matching the detected stack's extensions:
 
-**Violation Condition**: New source file's path does not match any established directory pattern.
+| Stack | Source Extensions |
+|-------|------------------|
+| Node.js/TypeScript | `.js`, `.ts`, `.jsx`, `.tsx`, `.mjs`, `.cjs` |
+| Python | `.py` |
+| Go | `.go` |
+| Rust | `.rs` |
+| .NET | `.cs`, `.fs`, `.vb` |
+| Java | `.java`, `.kt` |
+| PHP | `.php` |
+
+3. Exclude files matching these patterns (never flag these):
+   ```
+   **/migrations/*, **/migrate/*, **/seeds/*, **/seeders/*,
+   **/fixtures/*, **/config/*, **/configuration/*,
+   **/scripts/*, **/bin/*, **/.github/*, **/docs/*,
+   **/documentation/*, *.config.*, *.json, *.yaml, *.yml,
+   *.toml, *.xml, *.md, *.txt, *.sql, *.sh
+   ```
+4. For each remaining file, collect all directory globs from `detected_patterns`
+5. Test the file's path against every glob
+6. If no glob matches the file's directory, flag it
+
+**Violation Condition**: New source file's path does not match any established directory pattern (after filtering to stack source files and excluding non-source paths).
 
 **Fix Template**: "New file `{file}` doesn't match any established directory pattern. Expected locations: {pattern_list}."
 
