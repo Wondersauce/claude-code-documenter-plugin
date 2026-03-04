@@ -66,7 +66,11 @@ Before doing anything else:
 The verification request arrives from ws-orchestrator with:
 - `plan`: the full task definition array from ws-planner
 - `build_results`: the completed_tasks array with all ws-dev results (files_changed, checklist, self_verification, issues)
+- `execution_manifest`: the planner's execution manifest (optional — present when grouping was used)
+- `completed_groups`: array of group results with per-task `task_results` (optional — present when grouping was used)
 - `project`: project name
+
+Detect group-aware input by checking for `completed_groups`. If present and non-empty, use the group verification flow alongside single-task verification. The flat `build_results` and `plan` arrays remain the primary input for all existing verification logic — group structures provide attribution and efficiency only.
 
 ### 1.2 Load documentation
 
@@ -109,6 +113,16 @@ For each file, log:
 ```
 Reading changed file: [path] ([action: created/modified])
 ```
+
+**Group-aware file reading:** When `completed_groups` are present, read all files from all `task_results[].files_changed` arrays within each group result. Each file read is attributed to its originating task via `task_id`:
+
+```
+Reading changed file: [path] (task: [task_id], action: created/modified)
+```
+
+This attribution is carried through all verification steps.
+
+Skip reading files from task results where `carried_forward: true` and the task's previous verification status was `pass` — those files have not changed and their verification result is already known.
 
 ### 1.4 Update session state
 
@@ -333,6 +347,39 @@ Update `.ws-session/verifier.json`:
 
 ---
 
+## Group Verification Flow
+
+When `completed_groups` is present and non-empty, this flow runs alongside the standard verification steps. Verification logic across all domains (Steps 2–6) is unchanged — every domain is still checked for every task. The efficiency gain is that tasks sharing a group are verified in the same Task() context rather than requiring separate verification invocations, and shared documentation is loaded once.
+
+**For each group in `completed_groups`:**
+
+1. Log: `Verifying group [group_id]: [task count] tasks`
+
+2. For each task in the group: run the full verification sequence (Steps 2–6) using documentation already loaded in Step 1.2. Each task is verified independently — acceptance criteria, pattern compliance, reuse, constraints, and documentation currency are all checked per-task.
+
+3. All findings carry `task_id` and `group_id` attribution:
+
+```json
+{
+  "task_id": "...",
+  "group_id": "...",
+  "severity": "HIGH | MEDIUM | LOW",
+  "domain": "acceptance | pattern | reuse | constraint | documentation",
+  "file": "path/to/file",
+  "line": 42,
+  "description": "what's wrong",
+  "expected": "what should be there",
+  "found": "what was found",
+  "recommended_fix": "specific actionable fix"
+}
+```
+
+**Note on the `line` field:** `line` is optional — not all findings can be attributed to a specific line number (for example, a missing ARIA label on a component, or a missing migration file). When a specific line can be identified, include it. When it cannot, omit the field rather than using a placeholder value.
+
+**Note on `task_id` and `group_id` on findings:** These fields are new additions to the finding format. For findings on ungrouped tasks, `group_id` is null and `task_id` identifies the task. Both fields are required on findings from group verification.
+
+---
+
 ## Step 7 — Produce Result
 
 ### 7.1 Calculate pass rate
@@ -375,6 +422,8 @@ Return to ws-orchestrator:
   "outputs": {
     "findings": [
       {
+        "task_id": "...",
+        "group_id": "...",
         "severity": "HIGH | MEDIUM | LOW",
         "domain": "acceptance | pattern | reuse | constraint | documentation",
         "file": "path/to/file",
@@ -385,6 +434,15 @@ Return to ws-orchestrator:
         "recommended_fix": "how to fix"
       }
     ],
+    "task_results": [
+      {
+        "task_id": "...",
+        "group_id": "...",
+        "criteria_met": "X/Y",
+        "pass_rate": "percentage",
+        "status": "pass | partial | fail"
+      }
+    ],
     "criteria_met": "X/Y",
     "pass_rate": "percentage"
   },
@@ -392,6 +450,8 @@ Return to ws-orchestrator:
   "next_action": "recommended next step for orchestrator"
 }
 ```
+
+`task_id` and `group_id` on findings enable ws-orchestrator's finding-to-task mapping to correctly identify which group to re-queue and which tasks within that group have findings. `group_id` is null for findings on ungrouped tasks. Top-level `pass_rate` and `criteria_met` aggregate correctly across both grouped and ungrouped tasks.
 
 ---
 
@@ -416,6 +476,7 @@ Return to ws-orchestrator:
   "files_read": [],
   "criteria_results": [],
   "findings": [],
+  "group_verification_state": [],
   "overall_status": "pass | partial | fail",
   "pass_rate": "0%",
   "outputs": {},
@@ -431,6 +492,25 @@ Return to ws-orchestrator:
 - Never delete the session file — ws-orchestrator manages archival
 - The session file must be valid, human-readable JSON at all times
 - On write failure, log the error and return `status: "failed"`
+
+### Group verification state
+
+`group_verification_state` tracks which groups have been verified, enabling compaction recovery mid-verification:
+
+```json
+{
+  "group_verification_state": [
+    {
+      "group_id": "uuid",
+      "status": "complete | in-progress | pending",
+      "tasks_verified": ["task_id_1", "task_id_2"],
+      "findings_count": 2
+    }
+  ]
+}
+```
+
+After each group is verified, update `group_verification_state` with the group's status and findings count. On session recovery, read `group_verification_state` to determine which groups are already complete and resume from the first group with `status: "pending"` or `"in-progress"`.
 
 ---
 

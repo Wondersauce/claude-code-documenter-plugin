@@ -208,12 +208,33 @@ The planner returns a structured result:
 ### 3.3 Write plan to session
 
 Update `.ws-session/orchestrator.json`:
-- Set `current_plan` to the task array
+- Set `current_plan` to the flat task array (preserved for user-facing display and backward compatibility)
+- Set `execution_manifest` to the planner's `execution_manifest` (if present)
 - Set `current_step` to `"3.4"`
 
 ### 3.4 Present plan to user
 
-Display a summary of the plan:
+Display a summary of the plan. If the planner returned an execution manifest with groups, include grouping information:
+
+```
+## Development Plan
+
+**Task:** [original task description]
+**Type:** [type] | **Area:** [area]
+**Sub-tasks:** [count total] ([X] in [Y] batched groups, [Z] independent)
+
+| # | Title | Complexity | Procedure | Batch |
+|---|-------|-----------|-----------|-------|
+| 1 | Add GET /users/:id | low | Add REST Endpoint | Group A |
+| 2 | Add PATCH /users/:id | low | Add REST Endpoint | Group A |
+| 3 | Add user migration | medium | Add Data Model | — |
+
+**Execution:** [N] Task() calls ([original count] tasks, [saved] calls saved by grouping)
+
+Approve this plan? [Y / request changes]
+```
+
+If no groups were formed (all tasks ungrouped), use the simpler format without the Batch column:
 
 ```
 ## Development Plan
@@ -252,11 +273,17 @@ Update `.ws-session/orchestrator.json`:
 
 ## Step 4 — Build
 
-### 4.1 Execute tasks
+### 4.0 Load execution manifest
 
-Process tasks from `current_plan` in dependency order. For each task:
+Read `execution_manifest` from `.ws-session/orchestrator.json`. If present and non-empty, walk `execution_order` sequentially. If absent (backward compatibility — planner did not produce groups), fall back to processing `current_plan` as a flat task array using the ungrouped flow for each task.
 
-#### 4.1.1 Determine sub-skill
+### 4.1 Execute items from execution_order
+
+For each item in `execution_order`:
+
+#### If item `type` is `"task"` (ungrouped):
+
+**4.1.1 Determine sub-skill**
 
 | Task Area | Sub-skill |
 |-----------|----------|
@@ -264,7 +291,7 @@ Process tasks from `current_plan` in dependency order. For each task:
 | `backend` | `ws-dev/backend` |
 | `fullstack` | `ws-dev/fullstack` |
 
-#### 4.1.2 Invoke ws-dev
+**4.1.2 Invoke ws-dev**
 
 ```
 Task(ws-dev/[area]) with:
@@ -273,7 +300,7 @@ Task(ws-dev/[area]) with:
   - iteration_findings: [findings from ws-verifier, if this is a re-build iteration]
 ```
 
-#### 4.1.3 Evaluate result
+**4.1.3 Evaluate result**
 
 The dev agent returns:
 
@@ -292,20 +319,53 @@ The dev agent returns:
 }
 ```
 
-- If `status = "success"`: record in `completed_tasks[]`, continue to next task
-- If `status = "partial"`: record partial result, log issues, continue to next task
+- If `status = "success"`: record in `completed_tasks[]`, continue to next item
+- If `status = "partial"`: record partial result, log issues, continue to next item
 - If `status = "blocked"`: log the architectural issue, present to user, await instruction. May require re-planning (return to Step 3).
 - If `status = "failed"`: log error, present to user, await instruction
 
-#### 4.1.4 Update session state
+**4.1.4 Update session state**
 
-After each task completes, update `.ws-session/orchestrator.json`:
+After each ungrouped task completes, update `.ws-session/orchestrator.json`:
 - Append to `completed_tasks`
-- Update `current_step` to reflect progress (e.g., `"4.1.[task_index]"`)
+- Update `current_step` to reflect progress (e.g., `"4.1.[item_index]"`)
+
+#### If item `type` is `"group"`:
+
+**4.1.5 Determine sub-skill**
+
+All tasks in a group share the same `area`. Use `group.shared_context.area` to determine the sub-skill. Frontend groups invoke `Task(ws-dev/frontend)`. Backend groups invoke `Task(ws-dev/backend)`.
+
+**4.1.6 Invoke ws-dev with group**
+
+```
+Task(ws-dev/[area]) with:
+  - group: [full group object including group_id, shared_context, and tasks array]
+  - project: [project name]
+  - iteration_findings: [group-level findings from ws-verifier, if re-build iteration]
+```
+
+The presence of the `group` field signals ws-dev that this is a batched invocation.
+
+**4.1.7 Evaluate group result**
+
+The group result contains per-task results. The top-level `status` is the worst-case across all task results. Evaluate:
+
+- If `status = "success"`: record group in `completed_groups[]`, extract per-task results into `completed_tasks[]`, continue
+- If `status = "partial"`: record group and per-task results, log issues, continue
+- If `status = "blocked"`: log architectural issue with the specific task that blocked, present to user, await instruction — may require re-planning
+- If `status = "failed"`: log error, present to user, await instruction
+
+**4.1.8 Update session state**
+
+After each group completes, update `.ws-session/orchestrator.json`:
+- Append full group result to `completed_groups[]`
+- Append all per-task results from `task_results[]` into `completed_tasks[]` (ws-verifier consumes the flat array)
+- Update `current_step` to reflect progress (e.g., `"4.1.[item_index]"`)
 
 ### 4.2 Build complete
 
-When all tasks are done:
+When all items in `execution_order` are processed:
 - Set `status` to `"build_complete"`
 - Set `current_step` to `"5"`
 - Add `"4"` to `completed_steps`
@@ -314,12 +374,30 @@ When all tasks are done:
 
 ## Step 5 — Verify
 
+### 5.0 Prepare verification input
+
+Build the verification input with group-aware data if available:
+
+```json
+{
+  "plan": ["...flat task array from current_plan..."],
+  "build_results": ["...completed_tasks flat array..."],
+  "execution_manifest": {},
+  "completed_groups": [],
+  "project": "project-name"
+}
+```
+
+`execution_manifest` and `completed_groups` are included only when the plan used grouping. If no groups exist, these fields are omitted and ws-verifier falls back to standard single-task verification.
+
 ### 5.1 Invoke ws-verifier
 
 ```
 Task(ws-verifier) with:
   - plan: [current_plan]
   - build_results: [completed_tasks array with all results]
+  - execution_manifest: [execution_manifest, if present]
+  - completed_groups: [completed_groups array, if present]
   - project: [project name]
 ```
 
@@ -335,15 +413,19 @@ The verifier returns:
   "outputs": {
     "findings": [
       {
+        "task_id": "...",
+        "group_id": "...",
         "severity": "HIGH | MEDIUM | LOW",
         "domain": "acceptance | pattern | reuse | constraint | documentation",
         "file": "path/to/file",
+        "line": 42,
         "description": "what's wrong",
         "expected": "what should be there",
         "found": "what was found",
         "recommended_fix": "how to fix"
       }
     ],
+    "task_results": [],
     "criteria_met": "X/Y",
     "pass_rate": "percentage"
   },
@@ -365,9 +447,13 @@ The verifier returns:
    - If `iteration_count < 3` (configurable via `max_iterations`):
      - Increment `iteration_count`
      - Log: `Verification iteration [N]/[max]: [summary of findings]`
-     - Map findings to tasks, then return to Step 4 with only the affected tasks.
+     - Map findings to tasks and groups, then return to Step 4 with only the affected items.
 
-     **Finding-to-task mapping:** For each finding, match its `file` field against each task's `files_to_create` and `files_to_modify` arrays. A finding is associated with a task if the finding's file appears in that task's file lists. If a finding's file doesn't match any task (e.g., an indirect side-effect), associate it with the task whose `files_to_modify` contains the closest parent directory, or with the last-executed task as a fallback. Attach matched findings as `iteration_findings` on each affected task. Do not re-run tasks with zero associated findings.
+     **Finding-to-task mapping (ungrouped tasks):** For each finding without a `group_id` (or where `group_id` is null), match its `file` field against each task's `files_to_create` and `files_to_modify` arrays. A finding is associated with a task if the finding's file appears in that task's file lists. If a finding's file doesn't match any task (e.g., an indirect side-effect), associate it with the task whose `files_to_modify` contains the closest parent directory, or with the last-executed task as a fallback. Attach matched findings as `iteration_findings` on each affected task. Do not re-run tasks with zero associated findings.
+
+     **Finding-to-group mapping (grouped tasks):** For each finding with a non-null `group_id`, re-queue the **entire group**, not just the individual task. The group's `shared_context` is preserved on re-queue. Attach findings to the group re-queue as a merged `iteration_findings` array. Each finding retains its `task_id` attribution so ws-dev knows which tasks within the group to re-implement. Tasks in the group without findings in the current iteration are not re-implemented — they carry forward their most recent `task_results` entry. If findings span multiple groups, each affected group is re-queued independently.
+
+     **Carry-forward baseline across iterations:** On each re-queue, the carry-forward baseline for each task in a group is the most recent `task_results` entry for that `task_id` stored in `completed_groups`. Tasks without findings in the current iteration carry forward their last result entry unchanged. This applies consistently across all iterations — on iteration 3, a task that passed on iteration 1 and has had no findings since carries its iteration 1 result forward.
    - If `iteration_count >= 3`:
      - Present all findings to the user:
        ```
@@ -459,7 +545,9 @@ Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
   "task_type": "feature | bugfix | refactor | documentation | infrastructure",
   "task_area": "frontend | backend | fullstack | devops",
   "current_plan": [],
+  "execution_manifest": {},
   "completed_tasks": [],
+  "completed_groups": [],
   "iteration_count": 0,
   "max_iterations": 3,
   "verification_findings": [],

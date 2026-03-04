@@ -249,6 +249,132 @@ Break the task into atomic sub-tasks. Each sub-task should represent a single ws
 
 Update `.ws-session/planner.json`:
 - Set `task_definitions` to the array of Task Definitions
+- Set `current_step` to `"4.5"`
+
+---
+
+## Step 4.5 — Group Tasks
+
+**Purpose:** Analyze the task definition array produced in Step 4 and cluster eligible tasks into groups for batched execution. Ungrouped tasks remain as individual task definitions and execute independently.
+
+### 4.5.1 Build the dependency graph
+
+From the `depends_on` fields across all task definitions, construct the full dependency graph. Record for each task: its direct dependencies, its transitive dependencies, and whether it is a dependency of any other task.
+
+### 4.5.2 Compute grouping keys
+
+For each task, compute its grouping key:
+```
+grouping_key = [area, playbook_procedure]
+```
+
+Tasks with the same grouping key are candidates for grouping. Immediately remove from consideration any task where:
+- `area` is `"fullstack"`
+- `estimated_complexity` is `"high"`
+- `estimated_complexity` is `"medium"` and its only candidate partners are also `"medium"`
+
+### 4.5.3 Form candidate sets
+
+For each unique grouping key with two or more candidate tasks:
+
+a. Remove any task that has a dependency relationship (direct or transitive) with any other task in the candidate set
+
+b. Remove any task where a file in its `files_to_create` appears in another candidate task's `files_to_modify`
+
+c. Check module overlap: for tasks to remain in the same candidate set, at least one module must be common across all tasks in the set. A task "touches" a module if any file in its `files_to_create` or `files_to_modify` resides within that module's directory per `documentation/architecture.md`. If no common module exists, attempt to split the candidate set into subsets that do share a module.
+
+d. Apply the complexity threshold (see below). If the combination exceeds the threshold, remove the highest-complexity task from the candidate set and leave it ungrouped.
+
+e. If two or more tasks remain: this is a valid group. If only one remains: leave it ungrouped.
+
+**Complexity threshold:**
+
+| Combination | Group eligible | Rationale |
+|-------------|---------------|-----------|
+| low + low | Yes | Both tasks small, clear efficiency win |
+| low + low + low | Yes | Combined stays within medium territory |
+| low + medium | Yes | Combined fits comfortably in a focused context |
+| low + low + medium | Yes | Combined approaches but does not exceed high territory |
+| medium + medium | No | Combined approaches high territory — isolation earns its cost |
+| Any high | No | Always executes independently |
+| low + medium + medium | No | Combined exceeds high territory |
+
+**Group-level complexity formula:**
+
+A group's `estimated_complexity` is determined as follows:
+- If the group contains any `medium` task: group complexity is `medium`
+- If the group contains 3 or more `low` tasks: group complexity is `medium`
+- Otherwise: group complexity is `low`
+
+### 4.5.4 Enforce maximum group size
+
+Maximum group size: **4 tasks**. If more than 4 tasks qualify for a single group: form the primary group from the 4 tasks with the most overlapping module context (most files in common modules). Leave remaining qualified tasks ungrouped — they may form their own group if they satisfy all criteria among themselves after the primary group is formed.
+
+### 4.5.5 Construct group objects
+
+For each valid group:
+
+```json
+{
+  "group_id": "uuid-v4",
+  "group_type": "batched",
+  "estimated_complexity": "low | medium",
+  "shared_context": {
+    "area": "backend",
+    "playbook_procedure": "Add REST Endpoint",
+    "docs_to_load": [
+      "documentation/playbook.md",
+      "documentation/capability-map.md",
+      "documentation/architecture.md"
+    ],
+    "modules": ["users", "auth"],
+    "reuse": []
+  },
+  "tasks": [
+    { "...full task definition..." },
+    { "...full task definition..." }
+  ],
+  "depends_on_groups": []
+}
+```
+
+`docs_to_load` is the union of all documents any task in the group would have loaded individually, deduplicated. `reuse` is the union of all reuse opportunities across all tasks in the group, deduplicated by capability name.
+
+`depends_on_groups` is populated by mapping the `depends_on` task IDs of any task in the group to their containing group IDs or ungrouped task IDs. This becomes the group-level dependency used by ws-orchestrator for execution ordering.
+
+### 4.5.6 Build the execution manifest
+
+```json
+{
+  "groups": [],
+  "ungrouped_tasks": [],
+  "execution_order": [
+    { "type": "group", "id": "group-uuid-1" },
+    { "type": "task", "id": "task-uuid-1" },
+    { "type": "group", "id": "group-uuid-2" }
+  ]
+}
+```
+
+`execution_order` is a topologically sorted list at the group/task level, respecting all dependency relationships. ws-orchestrator walks this list sequentially.
+
+### 4.5.7 Log grouping results
+
+```
+Grouping: [X] tasks → [Y] groups + [Z] ungrouped tasks
+Groups formed:
+  Group [id]: "[task title 1]", "[task title 2]" — procedure: [procedure], area: [area]
+Ungrouped:
+  "[task title]" — reason: [high complexity | unique procedure | no module overlap | dependency conflict | fullstack]
+Estimated Task() calls: [N] (down from [original task count])
+```
+
+### 4.5.8 Update session state
+
+Update `.ws-session/planner.json`:
+- Set `task_groups` to the groups array
+- Set `ungrouped_tasks` to the ungrouped task array
+- Set `execution_manifest` to the full execution manifest
 - Set `current_step` to `"5"`
 
 ---
@@ -300,6 +426,42 @@ If any checklist item fails:
 
 Update `.ws-session/planner.json`:
 - Set `validation_checklist` with pass/fail for each item
+- Set `current_step` to `"5.8"`
+
+### 5.8 Validate group integrity
+
+For each group in `task_groups`:
+
+- [ ] All tasks in the group share the same `area`
+- [ ] No task in the group has `area: "fullstack"`
+- [ ] All tasks in the group share the same `playbook_procedure`
+- [ ] No task in the group has `estimated_complexity: "high"`
+- [ ] The combination satisfies the complexity threshold table in Step 4.5.3
+- [ ] No intra-group dependency exists between any two tasks in the group
+- [ ] No file conflict exists (no file in `files_to_create` of one task appears in `files_to_modify` of another)
+- [ ] At least one common module is shared across all tasks in the group
+- [ ] Group size does not exceed 4 tasks
+
+For `execution_order`:
+- [ ] The list is a valid topological sort of the dependency DAG at the group/task level — no item appears before an item it depends on
+
+If any validation fails: dissolve the offending group and perform the following three operations atomically:
+
+1. Remove the group from `task_groups`
+2. Move all tasks that were in the group to `ungrouped_tasks`
+3. In `execution_order`, replace the single `{ "type": "group", "id": "[group-id]" }` entry with one `{ "type": "task", "id": "[task-id]" }` entry per dissolved task, inserted at the same position in the sequence and in the same order the tasks appeared in the group's `tasks` array
+
+After all group validations are complete, verify that every `id` referenced in `execution_order` resolves to either a group in `task_groups` or a task in `ungrouped_tasks`. If any `id` is unresolvable, log an error and remove the orphaned entry from `execution_order`.
+
+Record the dissolution in `issues[]`:
+```
+"group-integrity: Group [id] dissolved — [reason]. [N] tasks reinserted into execution_order at position [pos]."
+```
+
+Do not return `status: "failed"` for group integrity failures — ungrouped execution is always a valid fallback.
+
+Update `.ws-session/planner.json`:
+- Set `validation_checklist` with group integrity results
 - Set `current_step` to `"6"`
 
 ---
@@ -342,16 +504,32 @@ Return to ws-orchestrator:
         "reuse": []
       }
     ],
+    "task_groups": [],
+    "ungrouped_tasks": [],
+    "execution_manifest": {
+      "groups": [],
+      "ungrouped_tasks": [],
+      "execution_order": []
+    },
     "reuse_summary": {
       "capabilities_found": 0,
       "capabilities_used": 0
     },
-    "docs_loaded": []
+    "docs_loaded": [],
+    "grouping_summary": {
+      "total_tasks": 0,
+      "groups_formed": 0,
+      "tasks_in_groups": 0,
+      "ungrouped_tasks": 0,
+      "estimated_task_calls_saved": 0
+    }
   },
   "issues": [],
   "next_action": "recommended next step for orchestrator"
 }
 ```
+
+The flat `tasks` array is preserved for backward compatibility. `execution_manifest` is what ws-orchestrator uses for execution.
 
 ### Status definitions
 
@@ -390,6 +568,13 @@ Return to ws-orchestrator:
   },
   "reuse_opportunities": [],
   "task_definitions": [],
+  "task_groups": [],
+  "ungrouped_tasks": [],
+  "execution_manifest": {
+    "groups": [],
+    "ungrouped_tasks": [],
+    "execution_order": []
+  },
   "validation_checklist": {},
   "outputs": {},
   "errors": [],
@@ -421,6 +606,8 @@ When ws-orchestrator re-invokes ws-planner with user feedback (Step 3.5 in ws-or
 4. Return updated result
 
 The session file retains the history — `notes` field records what changed and why.
+
+**Re-planning and groups:** Re-planning always recomputes groups from scratch. When Step 4.5 runs after decomposition produces the updated task array, previous group assignments are not preserved — they are derived state, not user input, and any task modification can change grouping eligibility. The new execution manifest replaces the previous one entirely.
 
 ---
 
