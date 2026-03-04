@@ -1,7 +1,7 @@
 ---
 name: ws-codebase-documenter
-description: Generate and maintain comprehensive codebase documentation optimized for AI consumption. Optionally syncs to a Docusaurus site. Use when asked to document a codebase, generate API documentation, create docs for AI agents, maintain documentation after code changes, or sync docs to Docusaurus. Supports Node.js/TypeScript, Python, Go, Rust, .NET, Java, and PHP projects.
-argument-hint: "[bootstrap|update]"
+description: Generate and maintain comprehensive codebase documentation optimized for AI consumption, including development playbooks, capability maps, style guides, integration maps, and consistency checking. Optionally syncs to a Docusaurus site. Use when asked to document a codebase, generate API documentation, create docs for AI agents, maintain documentation after code changes, or sync docs to Docusaurus. Supports Node.js/TypeScript, Python, Go, Rust, .NET, Java, and PHP projects.
+argument-hint: "[bootstrap|update|regenerate <doc-type>]"
 ---
 
 # Codebase Documenter
@@ -14,7 +14,9 @@ Generate structured documentation designed for consumption by AI assistants and 
 
 Check if `documentation/config.json` exists:
 - **Does not exist**: Bootstrap Mode (first run)
-- **Exists**: Incremental Mode (subsequent runs)
+- **Exists**: Check the user's argument:
+  - `regenerate [doc-type]`: Regenerate Mode (targeted re-generation)
+  - Otherwise: Incremental Mode (subsequent runs)
 
 ### 2. Bootstrap Mode
 
@@ -72,6 +74,59 @@ If Docusaurus sync is requested, set the `docusaurus` field:
 }
 ```
 
+If this is a new bootstrap, also include the enhanced feature configuration with defaults:
+
+```json
+{
+  "frontend": {
+    "enabled": true,
+    "css_paths": [],
+    "js_paths": [],
+    "token_files": [],
+    "build_tool": null,
+    "methodology": null
+  },
+  "playbook": {
+    "enabled": true,
+    "custom_procedures": []
+  },
+  "capability_map": {
+    "enabled": true,
+    "custom_categories": []
+  },
+  "style_guide": {
+    "enabled": true,
+    "forbidden_patterns": ["!important", "inline styles"],
+    "custom_rules": []
+  },
+  "integration_map": {
+    "enabled": true
+  },
+  "consistency_check": {
+    "enabled": true,
+    "strict": false
+  },
+  "claude_md": {
+    "inject_rules": true,
+    "max_rules": 25,
+    "custom_rules": []
+  }
+}
+```
+
+All new fields are optional — existing `config.json` files without these fields use the defaults shown above.
+
+#### 2.2b Backfill Config
+
+After the scan (step 2.4) completes, update `documentation/config.json` a second time with auto-detected values:
+- Set `frontend.css_paths` to detected CSS/SCSS directory paths
+- Set `frontend.js_paths` to detected JS/TS frontend directory paths
+- Set `frontend.token_files` to detected design token file paths
+- Set `frontend.build_tool` to detected build tool name
+- Set `frontend.methodology` to detected CSS methodology
+
+This second write backfills detected values so the user can review and override them in subsequent runs.
+
 #### 2.3 Read Stack Reference
 
 Load the appropriate reference file:
@@ -86,6 +141,10 @@ This provides patterns for identifying public/private API, documentation comment
 3. Categorize items: functions, types, errors, features
 4. Extract documentation comments
 5. Map relationships between items
+6. If `config.frontend.enabled` is `true`: scan frontend assets following the procedures in `references/frontend-detection.md`. This detects CSS/SCSS organization, methodology, design tokens, breakpoints, JS initialization patterns, build tools, and anti-patterns.
+7. Track cross-module function calls using patterns from the "Cross-Module Patterns" section in `references/stacks/[stack].md`. Record: calling module, called function/method, file path, and data passed.
+8. For each design pattern detected in step 5, extract concrete details for playbook generation: file path globs, base classes/interfaces, directory conventions, required method signatures.
+9. While scanning, build the capability map incrementally — classify each public function/type into a functional domain category as it is discovered. Do NOT defer this to a second pass.
 
 #### 2.5 Generate Documentation
 
@@ -98,6 +157,10 @@ documentation/
 ├── .docstate
 ├── overview.md
 ├── architecture.md
+├── playbook.md
+├── capability-map.md
+├── style-guide.md
+├── integration-map.md
 ├── public/
 │   ├── _index.md
 │   ├── features/
@@ -119,14 +182,40 @@ Generate files:
 4. Type docs - One file per type
 5. Error docs - Error hierarchy and patterns
 6. Index files - `_index.md` in each directory
+7. `playbook.md` — Read template 11 from `references/doc-templates.md`. For each design pattern extracted in step 2.4 (item 8), generate a numbered step-by-step procedure. Include checklists and common mistakes. Only generated when `config.playbook.enabled` is `true`.
+8. `capability-map.md` — Read template 12 from `references/doc-templates.md`. Use the domain classifications built incrementally during step 2.4 (item 9). Organize into task-oriented categories. Only generated when `config.capability_map.enabled` is `true`.
+9. `style-guide.md` — Read template 13 from `references/doc-templates.md`. Use frontend scan results from step 2.4 (item 6). Only generated when `config.style_guide.enabled` is `true` AND frontend assets were detected.
+10. `integration-map.md` — Read template 14 from `references/doc-templates.md`. Use cross-module data from step 2.4 (item 7). Only generated when `config.integration_map.enabled` is `true`.
 
 #### 2.6 Update Claude Code Instructions
 
 Create or update `CLAUDE.md` in the project root to reference the documentation. If the file exists, append to it; otherwise create it.
 
-Add this section:
+Add these sections:
 
 ```markdown
+## Project Rules
+
+These rules MUST be followed when modifying this codebase:
+
+### Architecture
+- [Generated rules from architecture.md and playbook.md]
+
+### Data Access
+- [Generated rules about ORM/Model usage patterns]
+
+### Frontend
+- [Generated rules from style-guide.md]
+
+### Before Creating New Code
+- Check `documentation/capability-map.md` before creating any new utility, helper, or shared function
+- Check `documentation/public/_index.md` before creating any new public API
+- Follow the step-by-step procedures in `documentation/playbook.md` for common tasks
+
+### Documentation
+- After adding new public functions, types, or components, update the relevant documentation files
+- After adding new cross-module integrations, update `documentation/integration-map.md`
+
 ## Codebase Documentation
 
 This project has AI-optimized documentation in the `documentation/` folder.
@@ -134,16 +223,29 @@ This project has AI-optimized documentation in the `documentation/` folder.
 Before making changes to this codebase:
 1. Read `documentation/overview.md` for project purpose and entry points
 2. Read `documentation/architecture.md` for system design and data flow
-3. Check `documentation/public/_index.md` for the public API surface
+3. Read `documentation/playbook.md` for how to add new features
+4. Check `documentation/capability-map.md` for existing utilities and helpers
+5. Check `documentation/style-guide.md` for frontend conventions
+6. Check `documentation/public/_index.md` for the public API surface
 
 When modifying existing code:
 - Check the relevant function/type doc in `documentation/public/` or `documentation/private/`
 - Note any error handling patterns in `documentation/public/errors/`
 
 When adding new public APIs:
-- Follow patterns documented in `documentation/architecture.md`
+- Follow patterns documented in `documentation/playbook.md`
 - Ensure consistency with existing APIs in `documentation/public/`
+- Update `documentation/capability-map.md` with the new capability
 ```
+
+Extract project-specific rules to populate the "Project Rules" section (max `config.claude_md.max_rules`, default 25). Priority order for rule selection when candidates exceed the limit:
+1. `config.claude_md.custom_rules` — user-defined rules, always included first
+2. Architecture rules from `architecture.md` and `playbook.md`
+3. Data access rules from detected Model/Repository patterns
+4. Frontend rules from `style-guide.md` (when applicable)
+5. Documentation maintenance rules
+
+If `config.claude_md.inject_rules` is `false`, omit the "Project Rules" section and only include the "Codebase Documentation" section.
 
 #### 2.7 Write State
 
@@ -151,9 +253,51 @@ Create `documentation/.docstate`:
 ```json
 {
   "last_commit": "[current HEAD SHA]",
-  "last_run": "[ISO timestamp]"
+  "last_run": "[ISO timestamp]",
+  "docusaurus_last_sync": null,
+  "docusaurus_synced_files": [],
+  "consistency_last_check": null,
+  "consistency_violations": 0,
+  "generated_docs": [
+    "overview.md",
+    "architecture.md",
+    "playbook.md",
+    "capability-map.md",
+    "style-guide.md",
+    "integration-map.md"
+  ],
+  "detected_patterns": {
+    "rest_endpoint": {
+      "description": "Router → Controller → Model",
+      "glob": "src/controllers/*.php",
+      "base_class": "BaseController",
+      "required_methods": ["handle", "validate"]
+    },
+    "data_access": {
+      "description": "Model static methods with caching",
+      "glob": "src/models/*.php",
+      "base_class": "BaseModel",
+      "required_methods": ["save", "to_array", "get_by"]
+    },
+    "frontend_css": {
+      "description": "Component SCSS files",
+      "glob": "src/css/blocks/*.scss"
+    },
+    "frontend_js": {
+      "description": "Block entry points with .init()",
+      "glob": "src/js/blocks/*.js"
+    }
+  },
+  "frontend_stats": {
+    "important_count": 0,
+    "inline_style_count": 0,
+    "token_count": 0,
+    "breakpoint_count": 0
+  }
 }
 ```
+
+Only include `detected_patterns` entries for patterns that were actually detected. `generated_docs` lists only the doc files that were actually generated (based on config flags). `frontend_stats` is only included when `config.frontend.enabled` is `true`.
 
 Get current HEAD:
 ```bash
@@ -208,13 +352,82 @@ Also update:
 - `architecture.md` if structure changed
 - Cross-references in related docs
 
+Also update prescriptive documents when relevant changes are detected:
+
+| Change Type | Document to Update |
+|-------------|-------------------|
+| New design pattern or pattern change | `playbook.md` — add or update procedure |
+| New public function/type/helper | `capability-map.md` — add to relevant category |
+| New frontend files or convention change | `style-guide.md` — update rules and tokens |
+| New cross-module call or shared resource | `integration-map.md` — add integration pattern |
+
+#### 3.4.5 Consistency Check
+
+Skip if `config.consistency_check.enabled` is `false`.
+
+1. Load `references/consistency-rules.md` for rule definitions and the execution procedure
+2. Load `detected_patterns` from `documentation/.docstate`
+3. For each changed file from step 3.2, run applicable consistency rules following the execution procedure in `references/consistency-rules.md`
+4. If violations are found, generate `documentation/.consistency-report.md` using template 15 from `references/doc-templates.md`
+5. Include consistency results in the PR description (step 4.3)
+
+Severity is determined by `config.consistency_check.strict`:
+- `strict: true` — High-confidence violations are Errors, best-effort findings are Warnings
+- `strict: false` — All findings are Warnings
+
 #### 3.5 Verify Claude Code Instructions
 
-Check that `CLAUDE.md` contains the documentation reference section. If missing (e.g., file was reset or recreated), add it using the template from Bootstrap Mode step 2.6.
+Check that `CLAUDE.md` contains both:
+1. The "Codebase Documentation" reference section (from step 2.6)
+2. The "Project Rules" section (from step 2.6), if `config.claude_md.inject_rules` is `true`
+
+If the documentation reference section is missing, add it using the template from step 2.6.
+
+If rules have changed (because underlying documentation was updated in step 3.4), regenerate the rules section using the priority order from step 2.6 and update CLAUDE.md.
 
 #### 3.6 Update State
 
 Update `documentation/.docstate` with new HEAD and timestamp.
+
+### 3b. Regenerate Mode
+
+Execute when user runs with `regenerate [doc-type]`.
+
+Valid doc-types: `playbook`, `capability-map`, `style-guide`, `integration-map`, `overview`, `architecture`, `all`
+
+#### 3b.1 Determine Scan Scope
+
+Each doc type requires a different scan scope:
+
+| Doc Type | Required Scan Steps |
+|----------|-------------------|
+| `playbook` | Pattern detection (step 2.4, items 5, 8) |
+| `capability-map` | Full API scan (step 2.4, items 1-5, 9) |
+| `style-guide` | Frontend scan only (step 2.4, item 6) |
+| `integration-map` | Cross-module scan (step 2.4, item 7) |
+| `overview` | Basic scan (step 2.4, items 1-3) |
+| `architecture` | Full scan (step 2.4, items 1-5) |
+| `all` | Full scan (all of step 2.4) |
+
+#### 3b.2 Load Config and State
+
+Read `documentation/config.json` and `documentation/.docstate`. Load the stack reference file.
+
+#### 3b.3 Execute Targeted Scan
+
+Run only the scan steps required by the doc type (per the table above).
+
+#### 3b.4 Regenerate Document
+
+Regenerate the specified document file using the corresponding template from `references/doc-templates.md`.
+
+#### 3b.5 Update State
+
+Update `documentation/.docstate`:
+- Set `last_run` to current timestamp
+- Update `detected_patterns` if the scan detected changes
+- Update `frontend_stats` if frontend scan was run
+- Do NOT update `last_commit` — regeneration does not advance the incremental baseline
 
 ### 4. Create PR
 
@@ -371,3 +584,5 @@ Load these as needed:
 | `references/stacks/[stack].md` | After detecting or reading stack |
 | `references/doc-templates.md` | When generating any documentation |
 | `references/docusaurus.md` | When `config.docusaurus` is configured |
+| `references/frontend-detection.md` | During frontend scan (step 2.4, item 6) |
+| `references/consistency-rules.md` | During consistency check (step 3.4.5) |

@@ -240,3 +240,131 @@ class Repository(ABC):
     def get(self, id: str) -> Optional[Entity]:
         ...
 ```
+
+## Frontend Indicators
+
+> Note: Many Python projects are pure backend/API with no co-located frontend. This section applies only when frontend assets are detected alongside the Python project.
+
+### Asset Locations
+
+| Framework | CSS Location | JS Location | Template Location |
+|-----------|-------------|-------------|-------------------|
+| Django | `static/css/`, `staticfiles/css/`, `{app}/static/{app}/css/` | `static/js/`, `{app}/static/{app}/js/` | `templates/`, `{app}/templates/{app}/` |
+| Flask | `static/css/` | `static/js/` | `templates/` |
+| FastAPI | Typically none (API-only) | Typically none | Typically none |
+
+### Template References to CSS/JS
+
+**Django**:
+```html
+{% load static %}
+<link rel="stylesheet" href="{% static 'css/style.css' %}">
+<script src="{% static 'js/app.js' %}"></script>
+```
+
+Configuration: `STATIC_URL`, `STATICFILES_DIRS`, `STATIC_ROOT` in `settings.py`.
+
+**Flask**:
+```html
+<link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+```
+
+### Build Tool Detection
+
+Python projects with frontend typically use an external build step:
+- Check for `package.json` alongside Python config files
+- `webpack.config.*`, `vite.config.*` in project root
+- Django-specific: `django-webpack-loader`, `django-vite` in `INSTALLED_APPS`
+- `Makefile` or `justfile` with frontend build targets
+
+### Detection Priority
+
+If the project has NO `static/` directory, NO `templates/` directory, and NO `package.json`:
+- Set `frontend.enabled` to `false` in config
+- Skip all frontend scanning procedures
+
+## Cross-Module Patterns
+
+### Import Detection
+
+```python
+# Cross-module imports (between Django apps or packages)
+from users.models import User
+from payments.services import PaymentProcessor
+from core.utils import format_currency
+
+# Relative imports within a package
+from ..auth.backends import CustomBackend
+```
+
+Cross-module calls are identified by imports from different top-level packages or Django apps.
+
+### Signal Systems
+
+**Django Signals**:
+```python
+# Defining a signal (in signals.py)
+from django.dispatch import Signal
+order_completed = Signal()
+
+# Emitting (in services.py or views.py)
+order_completed.send(sender=self.__class__, order=order)
+
+# Receiving (in another app's apps.py or signals.py)
+from orders.signals import order_completed
+order_completed.connect(handle_order_completed)
+
+# Or using decorator
+from django.dispatch import receiver
+from orders.signals import order_completed
+
+@receiver(order_completed)
+def handle_order_completed(sender, order, **kwargs):
+    pass
+```
+
+Also check for Django's built-in signals: `pre_save`, `post_save`, `pre_delete`, `post_delete`, `m2m_changed`.
+
+### Task Queues
+
+**Celery Tasks**:
+```python
+# Task definition in one module
+@shared_task
+def process_payment(order_id):
+    pass
+
+# Called from another module
+from payments.tasks import process_payment
+process_payment.delay(order.id)
+```
+
+Cross-module task calls are integration points.
+
+### Dependency Injection
+
+**FastAPI Dependencies**:
+```python
+from fastapi import Depends
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+@app.get("/users/")
+def read_users(db: Session = Depends(get_db)):
+    pass
+```
+
+Dependencies shared across routers/modules are integration points.
+
+### Shared Resources
+
+- Database models: Django models referenced across apps (`from other_app.models import X`)
+- Settings constants: `from django.conf import settings`
+- Cache: `from django.core.cache import cache`
+- Shared utilities: common `utils/` or `core/` package

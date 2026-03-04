@@ -301,3 +301,175 @@ class UserRepository
 }
 ```
 Document magic methods with @method tags.
+
+## Frontend Indicators
+
+### Asset Locations
+
+| Framework | CSS Location | JS Location | Template Location |
+|-----------|-------------|-------------|-------------------|
+| WordPress | `src/css/`, `src/scss/`, `assets/css/` | `src/js/`, `assets/js/` | `templates/`, `template-parts/`, `blocks/` |
+| Laravel | `resources/css/`, `resources/sass/` | `resources/js/` | `resources/views/**/*.blade.php` |
+| Symfony | `assets/styles/` | `assets/` | `templates/**/*.html.twig` |
+| Generic PHP | `public/css/`, `css/` | `public/js/`, `js/` | `views/`, `templates/` |
+
+### WordPress Asset Registration
+
+```php
+// Enqueue styles
+function enqueue_theme_styles() {
+    wp_enqueue_style('main-style', get_template_directory_uri() . '/dist/css/main.css');
+    wp_enqueue_style('block-style', get_template_directory_uri() . '/dist/css/blocks/hero.css');
+}
+add_action('wp_enqueue_scripts', 'enqueue_theme_styles');
+
+// Enqueue scripts
+function enqueue_theme_scripts() {
+    wp_enqueue_script('main-js', get_template_directory_uri() . '/dist/js/app.js', [], false, true);
+    wp_enqueue_script('block-js', get_template_directory_uri() . '/dist/js/blocks/hero.js', ['jquery'], false, true);
+    wp_localize_script('main-js', 'themeData', ['ajaxUrl' => admin_url('admin-ajax.php')]);
+}
+add_action('wp_enqueue_scripts', 'enqueue_theme_scripts');
+
+// Block editor assets
+function enqueue_block_assets() {
+    wp_enqueue_style('editor-styles', get_template_directory_uri() . '/dist/css/editor.css');
+}
+add_action('enqueue_block_editor_assets', 'enqueue_block_assets');
+```
+
+Scan for `wp_enqueue_style`, `wp_enqueue_script`, `wp_localize_script` to map which CSS/JS files are actually loaded and on which hooks.
+
+### Laravel Asset Management
+
+```php
+// Vite (Laravel 9+)
+@vite(['resources/css/app.css', 'resources/js/app.js'])
+
+// Laravel Mix (legacy)
+<link href="{{ mix('css/app.css') }}" rel="stylesheet">
+<script src="{{ mix('js/app.js') }}"></script>
+```
+
+Config files: `vite.config.js` (Vite) or `webpack.mix.js` (Mix).
+
+### Symfony Encore
+
+```twig
+{{ encore_entry_link_tags('app') }}
+{{ encore_entry_script_tags('app') }}
+```
+
+Config: `webpack.config.js` with Symfony Encore setup.
+
+### Build Tool Detection
+
+| File | Tool | Framework |
+|------|------|-----------|
+| `webpack.config.js` (with Encore) | Webpack + Encore | Symfony |
+| `webpack.mix.js` | Laravel Mix | Laravel |
+| `vite.config.js` | Vite | Laravel 9+ |
+| `webpack.config.js` (with entries in `src/js/`) | Webpack | WordPress |
+| `gulpfile.js` | Gulp | WordPress/Generic |
+
+## Cross-Module Patterns
+
+### Namespace Detection
+
+```php
+// Cross-namespace calls indicate cross-module dependencies
+use App\Services\PaymentService;
+use App\Models\User;
+use App\Events\OrderCompleted;
+```
+
+Module boundaries in PHP are typically defined by top-level namespace segments (e.g., `App\Users`, `App\Payments`, `App\Orders`).
+
+### WordPress Hooks
+
+WordPress hooks are the primary cross-module communication mechanism:
+
+```php
+// Registering an action (Module B provides functionality)
+add_action('order_completed', function($order) {
+    // Send notification
+}, 10, 1);
+
+// Firing an action (Module A triggers it)
+do_action('order_completed', $order);
+
+// Registering a filter (Module B modifies data)
+add_filter('product_price', function($price, $product) {
+    return apply_discount($price, $product);
+}, 10, 2);
+
+// Applying a filter (Module A requests modified data)
+$price = apply_filters('product_price', $base_price, $product);
+```
+
+**Detection procedure**:
+1. Scan for all `add_action()` and `add_filter()` calls → record hook name, callback, priority, module
+2. Scan for all `do_action()` and `apply_filters()` calls → record hook name, module
+3. Match registrations to invocations to build the hook dependency map
+
+### Laravel Events
+
+```php
+// Event definition
+class OrderCompleted {
+    public function __construct(public Order $order) {}
+}
+
+// Dispatching
+event(new OrderCompleted($order));
+// or
+Event::dispatch(new OrderCompleted($order));
+
+// Listener (registered in EventServiceProvider)
+protected $listen = [
+    OrderCompleted::class => [
+        SendOrderNotification::class,
+        UpdateInventory::class,
+    ],
+];
+```
+
+### Symfony Events
+
+```php
+// Dispatching
+$dispatcher->dispatch(new OrderCompletedEvent($order), OrderEvents::COMPLETED);
+
+// Subscriber
+class OrderSubscriber implements EventSubscriberInterface {
+    public static function getSubscribedEvents(): array {
+        return [OrderEvents::COMPLETED => 'onOrderCompleted'];
+    }
+}
+```
+
+### Service Container Dependencies
+
+```php
+// Laravel DI
+class OrderService {
+    public function __construct(
+        private PaymentGateway $gateway,
+        private NotificationService $notifications,
+    ) {}
+}
+
+// Symfony DI (services.yaml)
+// App\Service\OrderService:
+//     arguments:
+//         $gateway: '@App\Gateway\PaymentGateway'
+```
+
+Constructor injection parameters reveal cross-module dependencies.
+
+### Shared Resources
+
+- Database tables: Multiple models/repositories accessing the same table
+- Cache keys: `Cache::get('key')` or `wp_cache_get('key', 'group')` used across modules
+- Global functions: `wsum_*` helper functions called from multiple modules
+- Configuration: `config('key')` (Laravel) or `get_option('key')` (WordPress) shared across modules

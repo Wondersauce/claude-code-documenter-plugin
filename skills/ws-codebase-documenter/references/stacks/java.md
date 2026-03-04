@@ -269,3 +269,160 @@ public sealed interface Shape
     permits Circle, Rectangle, Triangle {
 }
 ```
+
+## Frontend Indicators
+
+### Asset Locations
+
+| Framework | CSS Location | JS Location | Template Location |
+|-----------|-------------|-------------|-------------------|
+| Spring Boot | `src/main/resources/static/css/` | `src/main/resources/static/js/` | `src/main/resources/templates/` |
+| Spring + Thymeleaf | `src/main/resources/static/css/` | `src/main/resources/static/js/` | `src/main/resources/templates/**/*.html` |
+| JSP (legacy) | `webapp/css/`, `webapp/WEB-INF/css/` | `webapp/js/`, `webapp/WEB-INF/js/` | `webapp/WEB-INF/views/**/*.jsp` |
+| Vaadin | `frontend/styles/` | `frontend/` | N/A (Java-based UI) |
+
+### Template References
+
+**Thymeleaf**:
+```html
+<link th:href="@{/css/style.css}" rel="stylesheet">
+<script th:src="@{/js/app.js}"></script>
+<link th:href="@{/webjars/bootstrap/css/bootstrap.min.css}" rel="stylesheet">
+```
+
+**JSP**:
+```jsp
+<link rel="stylesheet" href="${pageContext.request.contextPath}/css/style.css">
+<script src="${pageContext.request.contextPath}/js/app.js"></script>
+```
+
+### Build Tool Detection
+
+| Indicator | Tool |
+|-----------|------|
+| `frontend-maven-plugin` in `pom.xml` | Maven with Node.js frontend build |
+| `com.github.node-gradle.node` in `build.gradle` | Gradle with Node.js frontend build |
+| `package.json` alongside `pom.xml`/`build.gradle` | Separate frontend build step |
+| `webjars` dependencies | WebJars (pre-packaged client-side libs) |
+
+### Separate Frontend Detection
+
+If a `package.json` exists alongside Java build files:
+- Check for `frontend/` or `src/main/frontend/` directory
+- Maven: look for `frontend-maven-plugin` execution phases
+- Gradle: look for Node plugin tasks
+- Multi-module: frontend may be a separate Maven/Gradle module
+
+## Cross-Module Patterns
+
+### Package Import Detection
+
+```java
+// Cross-package imports
+import com.myapp.auth.AuthService;
+import com.myapp.payments.PaymentProcessor;
+import com.myapp.shared.models.User;
+```
+
+Module boundaries are defined by top-level packages (e.g., `com.myapp.auth`, `com.myapp.orders`).
+
+### Java Module System (Java 9+)
+
+```java
+// module-info.java
+module com.myapp.orders {
+    requires com.myapp.auth;
+    requires com.myapp.shared;
+    exports com.myapp.orders.api;
+    exports com.myapp.orders.model;
+}
+```
+
+`requires` defines module dependencies. `exports` defines the public API boundary.
+
+### Spring Dependency Injection
+
+```java
+// Constructor injection reveals cross-module dependencies
+@Service
+public class OrderService {
+    private final UserRepository userRepository;    // from auth module
+    private final PaymentService paymentService;    // from payments module
+    private final NotificationService notifier;     // from notifications module
+
+    public OrderService(UserRepository userRepository,
+                       PaymentService paymentService,
+                       NotificationService notifier) {
+        this.userRepository = userRepository;
+        this.paymentService = paymentService;
+        this.notifier = notifier;
+    }
+}
+```
+
+### Spring Events
+
+```java
+// Event definition
+public class OrderCompletedEvent extends ApplicationEvent {
+    private final Order order;
+    public OrderCompletedEvent(Object source, Order order) {
+        super(source);
+        this.order = order;
+    }
+}
+
+// Publishing (in one module)
+applicationEventPublisher.publishEvent(new OrderCompletedEvent(this, order));
+
+// Listening (in another module)
+@EventListener
+public void handleOrderCompleted(OrderCompletedEvent event) {
+    // Process event
+}
+
+// Or async
+@Async
+@EventListener
+public void handleOrderCompletedAsync(OrderCompletedEvent event) { }
+```
+
+### Maven/Gradle Multi-Module
+
+**Maven**:
+```xml
+<!-- Parent pom.xml -->
+<modules>
+    <module>auth</module>
+    <module>orders</module>
+    <module>shared</module>
+</modules>
+
+<!-- Child module dependency -->
+<dependency>
+    <groupId>com.myapp</groupId>
+    <artifactId>auth</artifactId>
+</dependency>
+```
+
+**Gradle**:
+```groovy
+// settings.gradle
+include 'auth', 'orders', 'shared'
+
+// build.gradle (orders module)
+dependencies {
+    implementation project(':auth')
+    implementation project(':shared')
+}
+```
+
+Multi-module dependencies define formal cross-module contracts.
+
+### Shared Resources
+
+- JPA entities: `@Entity` classes referenced across services
+- Configuration beans: `@Configuration` classes providing shared beans
+- Cache: `@Cacheable`, `@CacheEvict` with shared cache names
+- Database: shared `DataSource` or `EntityManager`
+- Message queues: JMS/Kafka producers and consumers across modules

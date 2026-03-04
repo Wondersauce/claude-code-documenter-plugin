@@ -256,3 +256,120 @@ Document cancellation safety and required runtime.
 pub fn to_json(&self) -> String { ... }
 ```
 Document feature-gated functionality.
+
+## Frontend Indicators
+
+> Note: Rust projects rarely have co-located frontend assets. This section applies to web applications (Actix/Axum), desktop apps (Tauri), or WASM frontends (Leptos/Yew/Dioxus).
+
+### Asset Locations
+
+| Pattern | CSS Location | JS Location | Notes |
+|---------|-------------|-------------|-------|
+| Actix/Axum web | `static/`, `public/`, `assets/` | `static/`, `public/` | Static file serving |
+| Tauri | `../src/` (sibling frontend dir) | `../src/` | Frontend is a separate project in `src-tauri/` parent |
+| Leptos | `style/`, `assets/` | N/A (Rust → WASM) | CSS only, JS is compiled from Rust |
+| Yew | `static/`, `assets/` | N/A (Rust → WASM) | CSS only, JS is compiled from Rust |
+| Trunk (WASM bundler) | Referenced in `index.html` | N/A | `Trunk.toml` config |
+
+### Detection Heuristics
+
+- **Tauri**: `src-tauri/` directory with `tauri.conf.json`. Frontend is in the parent directory.
+- **Leptos**: `cargo-leptos` in dependencies, `Cargo.toml` with `[package.metadata.leptos]`
+- **Yew**: `yew` in `Cargo.toml` dependencies
+- **Trunk**: `Trunk.toml` or `trunk` in build scripts
+- **Static serving**: `actix-files` or `tower-http` (serve) in dependencies
+
+### Separate Frontend Detection
+
+If a `package.json` exists alongside `Cargo.toml` (especially in Tauri projects), the frontend is built separately. Check `src-tauri/tauri.conf.json` for the `distDir` pointing to frontend build output.
+
+## Cross-Module Patterns
+
+### Crate/Module Import Detection
+
+```rust
+// Cross-module imports within a crate
+use crate::auth::verify_token;
+use crate::database::Pool;
+use crate::models::User;
+
+// Cross-crate imports (workspace dependencies)
+use shared_types::OrderId;
+use auth_service::AuthClient;
+```
+
+Module boundaries in Rust are defined by the module tree (`mod` declarations) and crate boundaries (workspace members).
+
+### Visibility Boundaries
+
+```rust
+// Public to all crates
+pub fn public_api() {}
+
+// Public within the crate only
+pub(crate) fn internal_helper() {}
+
+// Public to parent module only
+pub(super) fn parent_visible() {}
+
+// Private (default)
+fn private_fn() {}
+```
+
+`pub(crate)` and `pub(super)` define soft module boundaries within a crate. Cross-crate boundaries are enforced by `pub` exports.
+
+### Re-export Patterns
+
+```rust
+// lib.rs or mod.rs defining the public boundary
+pub mod models;
+pub mod services;
+pub use models::User;         // Re-exported as part of public API
+pub(crate) mod internal;      // Not visible outside crate
+```
+
+The `pub use` and `pub mod` declarations in `lib.rs` or `mod.rs` define a module's public API.
+
+### Trait-Based Decoupling
+
+```rust
+// Module A defines the trait (interface)
+pub trait UserRepository {
+    async fn find(&self, id: UserId) -> Result<User>;
+    async fn save(&self, user: &User) -> Result<()>;
+}
+
+// Module B implements it
+impl UserRepository for PostgresRepo {
+    async fn find(&self, id: UserId) -> Result<User> { ... }
+    async fn save(&self, user: &User) -> Result<()> { ... }
+}
+```
+
+Trait definitions in one module with implementations in another represent cross-module contracts.
+
+### Message Passing
+
+```rust
+// Channel-based communication between modules
+use tokio::sync::mpsc;
+
+let (tx, mut rx) = mpsc::channel::<OrderEvent>(100);
+
+// Producer module
+tx.send(OrderEvent::Completed(order_id)).await?;
+
+// Consumer module
+while let Some(event) = rx.recv().await {
+    handle_event(event).await;
+}
+```
+
+Also check for Actor patterns (Actix actors, `tokio::spawn` with channels).
+
+### Shared Resources
+
+- Database pool: `sqlx::Pool` or `diesel::Pool` shared via `web::Data` (Actix) or `State` (Axum)
+- Configuration: `config` crate structs shared at startup
+- Cache: `redis::Client` or in-memory cache shared via `Arc<Mutex<T>>`
+- Application state: `Arc<AppState>` passed to handlers

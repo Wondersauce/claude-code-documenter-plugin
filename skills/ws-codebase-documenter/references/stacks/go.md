@@ -221,3 +221,130 @@ type Server struct {
 }
 ```
 Document which methods come from embedded types.
+
+## Frontend Indicators
+
+> Note: Go projects rarely have co-located frontend assets. This section applies only when the Go project serves web content (e.g., web applications using `html/template`, embedded SPAs, or HTMX-driven UIs).
+
+### Asset Locations
+
+| Pattern | CSS Location | JS Location | Template Location |
+|---------|-------------|-------------|-------------------|
+| Standard web app | `static/css/`, `web/static/css/` | `static/js/`, `web/static/js/` | `templates/`, `web/templates/` |
+| Embedded assets | `embed` directive targets | `embed` directive targets | `embed` directive targets |
+| Separate frontend | `frontend/`, `ui/`, `web/` | `frontend/`, `ui/`, `web/` | N/A (SPA) |
+
+### Template Engine Detection
+
+```go
+// Standard library templates
+import "html/template"
+import "text/template"
+
+// Template files: *.html, *.tmpl, *.gohtml
+tmpl := template.Must(template.ParseGlob("templates/*.html"))
+```
+
+### Embedded Assets (Go 1.16+)
+
+```go
+//go:embed static/*
+var staticFiles embed.FS
+
+//go:embed templates/*
+var templateFiles embed.FS
+```
+
+Scan for `//go:embed` directives to find embedded static asset directories.
+
+### Separate Frontend Detection
+
+If a `package.json` exists alongside `go.mod`, the project likely has a separate frontend build step. Check for:
+- `frontend/` or `ui/` directory with its own `package.json`
+- Build scripts in `Makefile` or `justfile` that reference frontend builds
+- Docker multi-stage builds that include a frontend build step
+
+## Cross-Module Patterns
+
+### Package Import Detection
+
+```go
+// Cross-package imports
+import (
+    "myproject/internal/auth"
+    "myproject/pkg/database"
+    "myproject/internal/orders"
+)
+
+// Usage
+user, err := auth.GetCurrentUser(ctx)
+orders.Create(ctx, user.ID, items)
+```
+
+Module boundaries in Go are defined by packages. Cross-package function calls are integration points.
+
+### Internal Directory Visibility
+
+```
+myproject/
+├── internal/        # Only importable by myproject and its sub-packages
+│   ├── auth/        # internal/auth can import internal/database
+│   ├── database/
+│   └── orders/
+├── pkg/             # Importable by external projects
+│   ├── client/
+│   └── models/
+└── cmd/
+    └── server/
+```
+
+The `internal/` directory enforces visibility at the compiler level. Packages under `internal/` can only be imported by code rooted at the parent of `internal/`.
+
+### Interface-Based Decoupling
+
+```go
+// Module A defines an interface for what it needs
+type UserStore interface {
+    GetUser(ctx context.Context, id string) (*User, error)
+    SaveUser(ctx context.Context, user *User) error
+}
+
+// Module B implements the interface
+type PostgresUserStore struct { db *sql.DB }
+func (s *PostgresUserStore) GetUser(ctx context.Context, id string) (*User, error) { ... }
+
+// Integration point: where concrete type is assigned to interface
+func NewServer(store UserStore) *Server { ... }
+```
+
+Interface definitions and their concrete implementations crossing package boundaries are key integration points.
+
+### Context Propagation
+
+```go
+// Context carrying values across package boundaries
+ctx = context.WithValue(ctx, userKey, user)
+
+// Retrieved in another package
+user := ctx.Value(userKey).(*User)
+```
+
+Context values passed between packages represent implicit cross-module data flow.
+
+### gRPC Service Boundaries
+
+When `*.proto` files exist:
+```protobuf
+service OrderService {
+    rpc CreateOrder(CreateOrderRequest) returns (Order);
+}
+```
+
+Each gRPC service definition represents a formal module boundary with an explicit contract.
+
+### Shared Resources
+
+- Database connections: `*sql.DB` or ORM instance passed to multiple packages
+- Redis/cache clients: shared across packages via dependency injection
+- Configuration: `config` package or struct passed at startup
+- Logger: shared `*slog.Logger` or custom logger instance

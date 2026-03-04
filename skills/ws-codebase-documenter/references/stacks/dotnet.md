@@ -256,3 +256,150 @@ public interface IUserService
     Task DeleteAsync(Guid id);
 }
 ```
+
+## Frontend Indicators
+
+### Asset Locations
+
+| Framework | CSS Location | JS Location | Template/View Location |
+|-----------|-------------|-------------|----------------------|
+| Blazor | `wwwroot/css/` | `wwwroot/js/` (minimal) | `Components/**/*.razor` |
+| Razor Pages | `wwwroot/css/`, `wwwroot/lib/` | `wwwroot/js/`, `wwwroot/lib/` | `Pages/**/*.cshtml` |
+| MVC | `wwwroot/css/`, `wwwroot/lib/` | `wwwroot/js/`, `wwwroot/lib/` | `Views/**/*.cshtml` |
+| API-only | Typically none | Typically none | N/A |
+
+### Component-Scoped CSS (Blazor)
+
+```
+Components/
+├── Pages/
+│   ├── Home.razor
+│   └── Home.razor.css        ← Scoped to Home component
+├── Layout/
+│   ├── MainLayout.razor
+│   └── MainLayout.razor.css  ← Scoped to MainLayout
+```
+
+Blazor uses CSS isolation: `Component.razor.css` is automatically scoped to `Component.razor`. The build produces a bundled `{ProjectName}.styles.css`.
+
+### Asset Management
+
+```html
+<!-- _Layout.cshtml or _Host.cshtml -->
+<link rel="stylesheet" href="~/css/site.css" />
+<link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+<script src="~/js/site.js"></script>
+
+<!-- Blazor CSS isolation bundle -->
+<link href="{ProjectName}.styles.css" rel="stylesheet" />
+```
+
+### Build Tool Detection
+
+| File | Tool |
+|------|------|
+| `libman.json` | Library Manager (client-side libraries) |
+| `bundleconfig.json` | BuildBundlerMinifier |
+| `package.json` (alongside .csproj) | npm/Node.js build step |
+| `webpack.config.*` | Webpack |
+| `gulpfile.*` | Gulp |
+
+### Tag Helpers
+
+```html
+<link asp-href-include="css/**/*.css" rel="stylesheet" />
+<script asp-src-include="js/**/*.js"></script>
+<environment include="Development">
+    <link rel="stylesheet" href="~/css/site.css" />
+</environment>
+```
+
+Scan for `asp-href-include`, `asp-src-include` tag helpers to understand asset inclusion patterns.
+
+## Cross-Module Patterns
+
+### Project Reference Detection
+
+```xml
+<!-- In .csproj files -->
+<ProjectReference Include="..\Auth\Auth.csproj" />
+<ProjectReference Include="..\Shared\Shared.csproj" />
+```
+
+Each `<ProjectReference>` in `.csproj` files defines a direct module dependency.
+
+### Namespace-Based Module Detection
+
+```csharp
+// Cross-namespace imports indicate cross-module calls
+using MyApp.Auth;
+using MyApp.Payments;
+using MyApp.Shared.Models;
+```
+
+Module boundaries are typically defined by project/namespace (e.g., `MyApp.Auth`, `MyApp.Orders`).
+
+### Dependency Injection
+
+```csharp
+// Service registration in Program.cs or Startup.cs
+builder.Services.AddScoped<IUserService, UserService>();
+builder.Services.AddTransient<IEmailSender, SmtpEmailSender>();
+builder.Services.AddSingleton<ICacheService, RedisCacheService>();
+
+// Constructor injection reveals dependencies
+public class OrderController : ControllerBase
+{
+    private readonly IUserService _userService;
+    private readonly IPaymentService _paymentService;
+
+    public OrderController(IUserService userService, IPaymentService paymentService)
+    {
+        _userService = userService;
+        _paymentService = paymentService;
+    }
+}
+```
+
+The DI container IS the primary cross-module integration mechanism. Scan `Program.cs`/`Startup.cs` for `Add*` calls and constructors for injected interfaces.
+
+### MediatR / CQRS Pattern
+
+```csharp
+// Command/Query (Module A sends)
+public record CreateOrderCommand(string UserId, List<Item> Items) : IRequest<OrderResult>;
+
+// Handler (Module B processes)
+public class CreateOrderHandler : IRequestHandler<CreateOrderCommand, OrderResult>
+{
+    public async Task<OrderResult> Handle(CreateOrderCommand request, CancellationToken ct) { ... }
+}
+
+// Notification (event across modules)
+public record OrderCreatedNotification(Guid OrderId) : INotification;
+public class SendEmailHandler : INotificationHandler<OrderCreatedNotification> { ... }
+public class UpdateInventoryHandler : INotificationHandler<OrderCreatedNotification> { ... }
+```
+
+MediatR `IRequest`/`INotification` types define cross-module contracts.
+
+### Event Bus Patterns
+
+```csharp
+// Domain events
+public interface IDomainEvent { }
+public record OrderCompletedEvent(Guid OrderId, decimal Total) : IDomainEvent;
+
+// Publishing
+await _eventBus.PublishAsync(new OrderCompletedEvent(order.Id, order.Total));
+
+// Handling
+public class OrderCompletedHandler : IEventHandler<OrderCompletedEvent> { ... }
+```
+
+### Shared Resources
+
+- DbContext: `ApplicationDbContext` or split contexts shared across modules
+- Configuration: `IOptions<T>` pattern for shared settings
+- Cache: `IDistributedCache` or `IMemoryCache` instances
+- HttpClient: `IHttpClientFactory` with named clients shared across services
