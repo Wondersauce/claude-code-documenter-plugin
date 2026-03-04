@@ -571,15 +571,16 @@ Common issues:
 - Cannot detect stack: Ask user to set `stack` in config.json
 - Cannot parse source files: Skip unparseable files, continue with others
 - Git operations fail: Ensure clean working directory
+- Reference file missing: See the fallback column in the Reference Files table below
 
 ## Reference Files
 
-Load these as needed:
+Load these as needed. If a file cannot be read (missing, corrupted install, partial update), follow the fallback behavior:
 
-| File | When to Load |
-|------|--------------|
-| `references/stacks/[stack].md` | After detecting or reading stack |
-| `references/doc-templates.md` | When generating any documentation |
-| `references/docusaurus.md` | When `config.docusaurus` is configured |
-| `references/frontend-detection.md` | During frontend scan (step 2.4, item 6) |
-| `references/consistency-rules.md` | During consistency check (step 3.4.5) |
+| File | When to Load | If Missing |
+|------|--------------|------------|
+| `references/stacks/[stack].md` | After detecting or reading stack | **Fail** — cannot generate accurate docs without stack-specific rules. Log: `"Missing reference file for stack '{stack}'. Reinstall the plugin."` Stop. |
+| `references/doc-templates.md` | When generating any documentation | **Fail** — templates are required for all output. Log: `"Missing doc-templates.md. Reinstall the plugin."` Stop. |
+| `references/docusaurus.md` | When `config.docusaurus` is configured | **Skip feature** — skip Docusaurus sync. Log: `"Missing docusaurus.md. Skipping Docusaurus sync."` |
+| `references/frontend-detection.md` | During frontend scan (step 2.4, item 6) | **Skip feature** — set all frontend results to empty/null, set `config.frontend.enabled` to `false`. Log: `"Missing frontend-detection.md. Skipping frontend scan."` |
+| `references/consistency-rules.md` | During consistency check (step 3.4.5) | **Skip feature** — skip consistency checking entirely, omit the Consistency Check section from the PR description. Log: `"Missing consistency-rules.md. Skipping consistency checks."` |
