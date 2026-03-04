@@ -19,6 +19,10 @@ Map the `documentation/` structure to Docusaurus `docs/` path:
 |--------|------------------------|
 | `documentation/overview.md` | `[docs_path]/index.md` |
 | `documentation/architecture.md` | `[docs_path]/architecture.md` |
+| `documentation/playbook.md` | `[docs_path]/playbook.md` |
+| `documentation/capability-map.md` | `[docs_path]/capability-map.md` |
+| `documentation/style-guide.md` | `[docs_path]/style-guide.md` |
+| `documentation/integration-map.md` | `[docs_path]/integration-map.md` |
 | `documentation/public/` | `[docs_path]/public/` |
 | `documentation/public/functions/` | `[docs_path]/public/functions/` |
 | `documentation/public/types/` | `[docs_path]/public/types/` |
@@ -77,6 +81,46 @@ sidebar_position: 2
 ---
 ```
 
+**Playbook**:
+```yaml
+---
+id: playbook
+title: Development Playbook
+sidebar_label: Playbook
+sidebar_position: 3
+---
+```
+
+**Capability Map**:
+```yaml
+---
+id: capability-map
+title: Capability Map
+sidebar_label: Capability Map
+sidebar_position: 4
+---
+```
+
+**Style Guide**:
+```yaml
+---
+id: style-guide
+title: Style Guide
+sidebar_label: Style Guide
+sidebar_position: 5
+---
+```
+
+**Integration Map**:
+```yaml
+---
+id: integration-map
+title: Integration Map
+sidebar_label: Integration Map
+sidebar_position: 6
+---
+```
+
 **Index files** (`_index.md` -> `index.md`):
 ```yaml
 ---
@@ -112,7 +156,7 @@ Create `_category_.json` in each directory:
 ```json
 {
   "label": "Public API",
-  "position": 3,
+  "position": 7,
   "collapsed": false
 }
 ```
@@ -164,11 +208,15 @@ Create `_category_.json` in each directory:
 |-----------|----------|
 | Root index | 1 |
 | Architecture | 2 |
-| Public | 3 |
-| Public/Functions | 3.1 |
-| Public/Types | 3.2 |
-| Public/Errors | 3.3 |
-| Public/Features | 3.4 |
+| Playbook | 3 |
+| Capability Map | 4 |
+| Style Guide | 5 |
+| Integration Map | 6 |
+| Public | 7 |
+| Public/Functions | 7.1 |
+| Public/Types | 7.2 |
+| Public/Errors | 7.3 |
+| Public/Features | 7.4 |
 | Private | 10 |
 
 Within each directory, items are ordered alphabetically unless `_index.md` specifies an order.
