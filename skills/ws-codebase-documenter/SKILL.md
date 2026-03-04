@@ -365,7 +365,7 @@ Skip if `config.consistency_check.enabled` is `false`.
 1. Load `references/consistency-rules.md` for rule definitions and the execution procedure
 2. Load `detected_patterns` from `documentation/.docstate`
 3. For each changed file from step 3.2, run applicable consistency rules following the execution procedure in `references/consistency-rules.md`
-4. If violations are found, generate `documentation/.consistency-report.md` using template 15 from `references/doc-templates.md`
+4. Generate `documentation/.consistency-report.md` using template 15 from `references/doc-templates.md`. This file is **fully replaced** on each run (never appended). If no violations are found, write a passing report.
 5. Include consistency results in the PR description (step 4.3)
 
 Severity is determined by `config.consistency_check.strict`:
