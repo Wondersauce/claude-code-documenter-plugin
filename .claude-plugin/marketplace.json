@@ -12,9 +12,9 @@
     {
       "name": "ws-codebase-documenter",
       "source": "./",
-      "description": "Generate and maintain comprehensive codebase documentation optimized for AI consumption",
-      "version": "1.0.0",
-      "keywords": ["documentation", "api-docs", "ai-documentation", "codebase"],
+      "description": "Generate and maintain comprehensive codebase documentation with prescriptive guides, consistency checking, and frontend-aware scanning",
+      "version": "2.0.0",
+      "keywords": ["documentation", "api-docs", "ai-documentation", "codebase", "style-guide", "consistency-checking"],
       "license": "MIT"
     }
   ]

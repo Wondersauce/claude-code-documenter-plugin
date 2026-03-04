@@ -1,7 +1,7 @@
 {
   "name": "ws-codebase-documenter",
-  "version": "1.0.0",
-  "description": "Generate and maintain comprehensive codebase documentation optimized for AI consumption. Supports Node.js/TypeScript, Python, Go, Rust, .NET, Java, and PHP projects with optional Docusaurus sync.",
+  "version": "2.0.0",
+  "description": "Generate and maintain comprehensive codebase documentation optimized for AI consumption. Produces prescriptive guides (playbook, capability map, style guide, integration map), runs consistency checks against detected patterns, and supports frontend-aware scanning. Works with Node.js/TypeScript, Python, Go, Rust, .NET, Java, and PHP projects with optional Docusaurus sync.",
   "author": {
     "name": "Wondersauce",
     "email": "marc@wondersauce.com"
@@ -11,7 +11,10 @@
     "api-docs",
     "docusaurus",
     "ai-documentation",
-    "codebase"
+    "codebase",
+    "style-guide",
+    "consistency-checking",
+    "frontend-scanning"
   ],
   "license": "MIT",
   "skills": "./skills/"
