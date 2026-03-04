@@ -101,9 +101,17 @@ The default operating mode for Claude Code sessions. Never writes code, never mo
 
 ### Usage
 
+With a task:
 ```
 /ws-orchestrator Add a user preferences API endpoint with GET and PATCH support
 ```
+
+Without a task (first-time setup):
+```
+/ws-orchestrator
+```
+
+When called with no argument and the CLAUDE.md boot block is not yet installed, ws-orchestrator offers to inject it. The boot block makes ws-orchestrator auto-activate on every future session — no manual invocation needed.
 
 ### Lifecycle
 

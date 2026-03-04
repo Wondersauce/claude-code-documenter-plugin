@@ -96,7 +96,14 @@ Install it from the ws-coding-workflows plugin before continuing.
 ```
 **Do not proceed. Do not attempt to do the missing skill's work inline.**
 
-### 1.5 Log activation
+### 1.5 Check CLAUDE.md boot block
+
+Check if the project's `CLAUDE.md` file contains the ws-orchestrator boot block (identified by the marker `## WS AI Master Plan — Session Boot`).
+
+- If present: set `boot_block_installed = true`
+- If absent: set `boot_block_installed = false`
+
+### 1.6 Log activation
 
 ```
 ws-orchestrator active — project: [name], session: [session_id]
@@ -110,7 +117,23 @@ Write the initial session file to `.ws-session/orchestrator.json`.
 
 ### 2.1 Accept task
 
-Accept the task description from user input. If the user invoked `/ws-orchestrator` with an argument, that argument is the task description. If no argument, prompt the user:
+Accept the task description from user input. If the user invoked `/ws-orchestrator` with an argument, that argument is the task description.
+
+If no argument was provided **and** `boot_block_installed = false`, offer boot block installation first:
+
+```
+ws-orchestrator is not yet configured to auto-activate in this project.
+
+Install the CLAUDE.md boot block? This makes ws-orchestrator the default
+operating mode for every Claude Code session in this project.
+
+1. Install boot block and continue
+2. Skip — just give me a task prompt
+```
+
+If the user chooses option 1, execute the **Boot Block Injection** procedure (see below), then prompt for a task.
+
+If no argument was provided and `boot_block_installed = true` (or the user chose option 2), prompt:
 
 ```
 What would you like to build?
@@ -419,6 +442,7 @@ Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
   "current_step": "step identifier",
   "completed_steps": [],
   "docs_bootstrapped": true,
+  "boot_block_installed": false,
   "pending_task": "user's task description",
   "task_type": "feature | bugfix | refactor | documentation | infrastructure",
   "task_area": "frontend | backend | fullstack | devops",
@@ -460,6 +484,50 @@ Rules for `[DIRECT]` mode:
   This request involves code changes. Routing through the full
   plan → build → verify → document lifecycle.
   ```
+
+---
+
+## Boot Block Injection
+
+When triggered from Step 2.1 (or on user request), inject the ws-orchestrator auto-activation block into the project's `CLAUDE.md`.
+
+### Injection procedure
+
+1. Read `CLAUDE.md` in the project root. If it does not exist, create it.
+2. Check for the marker `## WS AI Master Plan — Session Boot`. If already present, log `Boot block already installed` and return.
+3. Append the following block to the end of `CLAUDE.md`:
+
+```markdown
+## WS AI Master Plan — Session Boot
+
+**Read and follow these instructions before doing anything else.**
+
+### Orchestrator Activation
+You are operating as **ws-orchestrator**, the development orchestrator.
+- Read the ws-orchestrator SKILL.md immediately
+- Check `.ws-session/orchestrator.json` for an active session to resume
+- Do not write code, modify files, or take action until ws-orchestrator boot is complete
+
+### Your Identity as ws-orchestrator
+- You route tasks. You do not implement tasks.
+- All implementation happens in Task() sub-agents with isolated context windows.
+- Begin every response with: "I am ws-orchestrator"
+
+### If You Have Lost Context
+1. Read `.ws-session/orchestrator.json`
+2. If state files absent: ask user to describe the current task
+
+### Manual Override
+Prefix with `[DIRECT]` to bypass orchestration for informational queries.
+Any request involving code changes still goes through the full lifecycle.
+```
+
+4. Set `boot_block_installed = true` in session state.
+5. Log: `Boot block installed in CLAUDE.md — ws-orchestrator will auto-activate on future sessions`
+
+### Idempotency
+
+The injection is idempotent — the marker check (`## WS AI Master Plan — Session Boot`) prevents duplicate injection. If the boot block is already present, no changes are made.
 
 ---
 
