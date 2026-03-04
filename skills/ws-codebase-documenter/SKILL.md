@@ -182,7 +182,12 @@ Generate files:
 
 #### 2.6 Update Claude Code Instructions
 
-Create or update `CLAUDE.md` in the project root to reference the documentation. If the file exists, append to it; otherwise create it.
+Create or update `CLAUDE.md` in the project root to reference the documentation. If the file exists, check for existing sections before modifying:
+
+1. Read the file and search for `## Project Rules` and `## Codebase Documentation` headings
+2. If a section already exists, **replace it in place** (preserve surrounding content)
+3. If a section does not exist, **append it** to the end of the file
+4. If the file does not exist, create it
 
 **Step A**: If `config.claude_md.inject_rules` is `true` (default), add the Project Rules section:
 
