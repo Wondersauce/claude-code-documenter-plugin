@@ -116,6 +116,7 @@ ws-dev accepts either a single task definition or a group. Detect invocation typ
     "documentation_updates": [],
     "depends_on": [],
     "estimated_complexity": "low | medium | high",
+    "design_quality": "standard | high",
     "playbook_procedure": "...",
     "reuse": []
   },

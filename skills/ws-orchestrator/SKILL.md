@@ -443,7 +443,59 @@ The verifier returns:
 **If `status = "fail"` or `"partial"`:**
 
 1. Write findings to `.ws-session/orchestrator.json` under `verification_findings`
-2. Check `iteration_count`:
+
+2. **Classify findings — plan-conflict detection:**
+
+   Before deciding whether to auto-retry, classify each finding as either an **implementation error** or a **plan conflict**:
+
+   | Classification | Definition | Action |
+   |---------------|-----------|--------|
+   | **Implementation error** | ws-dev missed a requirement, used wrong pattern, or introduced a bug — the plan is correct but the output is wrong | Auto-retryable |
+   | **Plan conflict** | ws-dev intentionally diverged from the plan because the plan was infeasible, ambiguous, or contradicted by the actual codebase — re-dispatching will produce the same divergence | Escalate to user |
+
+   **How to detect plan conflicts:** A finding is a plan conflict when:
+   - The verifier's `description` or `found` field indicates ws-dev built something structurally different from what the plan specified (e.g., different API shape, different component hierarchy, different data flow)
+   - The ws-dev build result's `issues[]` array for the affected task contains an entry explaining why it deviated
+   - The same finding appeared in a previous iteration's `verification_findings` with substantially identical `description` and `file` — ws-dev was told to fix it and chose the same approach again
+
+   **If any plan-conflict findings exist, escalate immediately** — do not auto-retry. Present to the user:
+
+   ```
+   ## Plan Conflict Detected
+
+   The verifier found discrepancies where ws-dev's implementation intentionally
+   diverged from the plan. Auto-retrying won't resolve these — a decision is needed.
+
+   [If iteration_count > 0:]
+   **Note:** This is iteration [N]/[max]. [X] implementation-error findings were
+   already fixed in previous iterations. The remaining conflicts are structural.
+
+   **Conflicts:**
+   | Task | Plan Specified | Dev Implemented | Reason (if reported) |
+   |------|---------------|-----------------|---------------------|
+   | ...  | ...           | ...             | ...                 |
+
+   [If non-conflict findings also exist:]
+   **Additionally, [Y] implementation-error findings remain:**
+   | Severity | Domain | File | Description |
+   |----------|--------|------|-------------|
+   | ...      | ...    | ...  | ...         |
+
+   How would you like to proceed?
+   1. Amend the plan to match what ws-dev built (re-verify only)
+   2. Override ws-dev — enforce the original plan (re-build affected tasks)
+   3. Re-plan this task from scratch
+   4. Accept current state as-is
+   ```
+
+   - If user chooses **1 (Amend plan)**: Update `current_plan` with the dev's approach for affected tasks, then return to Step 5 (re-verify against amended plan). Do not re-build.
+   - If user chooses **2 (Override dev)**: Attach findings as `iteration_findings` with an explicit `enforce_plan: true` flag, increment `iteration_count`, and return to Step 4 for the affected tasks only.
+   - If user chooses **3 (Re-plan)**: Return to Step 3 with the original task description and a `feedback` note describing the conflict.
+   - If user chooses **4 (Accept)**: Proceed to Step 6.
+
+   **If no plan-conflict findings exist** (all findings are implementation errors), continue to step 3.
+
+3. **Check `iteration_count` (implementation-error auto-retry):**
    - If `iteration_count < 3` (configurable via `max_iterations`):
      - Increment `iteration_count`
      - Log: `Verification iteration [N]/[max]: [summary of findings]`
@@ -551,6 +603,7 @@ Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
   "iteration_count": 0,
   "max_iterations": 3,
   "verification_findings": [],
+  "plan_conflicts": [],
   "docs_updated": false,
   "outputs": {},
   "errors": [],
