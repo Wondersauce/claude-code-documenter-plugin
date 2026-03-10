@@ -24,20 +24,22 @@ These conventions apply to **every** frontend implementation. They are non-negot
 
 ### Styling Rules
 
-1. **Always read `documentation/style-guide.md` before writing any CSS, SCSS, or styled-components**
+1. **Read `documentation/style-guide.md` before writing any CSS, SCSS, or styled-components** — if the style guide exists, it governs all styling decisions. If deferred (new project), use the task definition's `structural_guidance` for styling conventions.
 2. **Never use `!important`** except in explicitly documented override patterns in the style guide
-3. **Never hard-code values** that exist as design tokens (colors, spacing, typography, breakpoints, shadows, z-index)
-4. **Always use the project's design token system** — import tokens, do not duplicate values
-5. **Follow the documented CSS methodology** (BEM, CSS Modules, styled-components, Tailwind — whatever the project uses)
+3. **Never hard-code values** that exist as design tokens (colors, spacing, typography, breakpoints, shadows, z-index). If no design token system exists yet (new project), define tokens as CSS variables or theme constants following the structural guidance — never scatter raw values.
+4. **Always use the project's design token system** — import tokens, do not duplicate values. For new projects without a token system, establish one as part of the first frontend task.
+5. **Follow the documented CSS methodology** (BEM, CSS Modules, styled-components, Tailwind — whatever the project uses). For new projects, follow the methodology specified in structural guidance.
 
 ### Component Rules
 
-6. **Always use established component patterns** from `documentation/capability-map.md`
-7. **Follow the documented component structure** (file organization, naming, props interface patterns)
-8. **Reuse existing components** before creating new ones — check the capability map first
-9. **New components must follow the same structure** as documented existing components
+6. **Use established component patterns** from `documentation/capability-map.md` when it exists. For new projects or when no capability map is available, follow the component patterns specified in structural guidance.
+7. **Follow the documented component structure** (file organization, naming, props interface patterns). For new projects, establish conventions in the first component and follow them consistently.
+8. **Reuse existing components** before creating new ones — check the capability map (if available) and the existing codebase first
+9. **New components must follow the same structure** as documented existing components (or the structural guidance for new projects)
 
 ### Accessibility Rules
+
+These rules are universal — they apply regardless of project maturity, framework, or documentation state.
 
 10. **All interactive elements must have ARIA labels** — buttons, links, inputs, custom controls
 11. **All images must have alt text** — descriptive for content images, empty `alt=""` for decorative
@@ -47,9 +49,9 @@ These conventions apply to **every** frontend implementation. They are non-negot
 
 ### Responsive Rules
 
-15. **All new components must respect documented responsive breakpoints** from the style guide
-16. **Use the project's responsive approach** (mobile-first, desktop-first — as documented)
-17. **Test that layouts do not break at documented breakpoint boundaries**
+15. **All new components must handle responsive layouts** — use breakpoints from the style guide when documented, or the project's established breakpoints. For new projects, define responsive breakpoints as part of the design token system.
+16. **Use the project's responsive approach** (mobile-first, desktop-first — as documented). Smart default if undocumented: mobile-first.
+17. **Test that layouts do not break at breakpoint boundaries**
 
 ---
 
@@ -159,10 +161,14 @@ This skill follows the same Step 0–5 lifecycle as ws-dev (see `../SKILL.md`). 
 
 ### Step 1 — Load Task Context (frontend additions)
 
-In addition to the standard documentation load:
+**Deferred-docs handling:** The parent ws-dev detects deferred state from the task definition (`playbook_procedure: null` + `structural_guidance` present). When deferred, the parent skips documentation loading. For this sub-skill:
+- If deferred (new/empty project): skip style-guide requirement — there is no existing design system. Use `structural_guidance` from the task definition for styling conventions, component patterns, and responsive approach. Log: `New project mode — using structural guidance for frontend conventions`
+- If established: proceed normally with full documentation load
+
+In addition to the standard documentation load (when not deferred):
 - **Always** read `documentation/style-guide.md` — this is critical for frontend tasks
 - Read any component-specific documentation referenced in the task definition
-- If the style guide is missing, return immediately:
+- If the style guide is missing on an **established** project (not deferred), return immediately:
   ```json
   {
     "skill": "ws-dev",
@@ -183,9 +189,10 @@ In addition to the standard documentation load:
 Add these checks to the standard checklist:
 
 ```
-- [x] Read style-guide.md: design tokens, component patterns, responsive breakpoints
-- [x] Identified existing components to reuse: [list]
-- [x] Understand responsive requirements: [breakpoints]
+- [x] Style source: [style-guide.md | structural guidance (deferred)]
+- [x] Design tokens / CSS methodology: [token system and CSS approach, or "establishing new" if deferred]
+- [x] Identified existing components to reuse: [list, or "none — new project" if deferred]
+- [x] Responsive approach: [breakpoints from style guide, or "defining new" if deferred]
 - [x] Accessibility requirements identified: [ARIA, alt text, keyboard nav]
 - [x] Design quality level: [standard | high]
 ```

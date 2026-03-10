@@ -73,6 +73,20 @@ Loaded: [document path] ([line count] lines)
 
 ### 1.2 Handle missing critical documents
 
+**If `docs_bootstrapped = "deferred"` (new/empty project):**
+
+Skip the playbook and capability-map requirements. This is a greenfield project with no existing code to document. Instead:
+- Log: `New project mode — planning without existing documentation baseline`
+- Produce task definitions with **explicit structural guidance** embedded directly in each task:
+  - `playbook_procedure`: set to `null` — no existing procedure to reference
+  - Add a `structural_guidance` field to each task specifying: file/directory conventions, naming patterns, framework setup steps, and architectural decisions that would normally come from the playbook
+  - `reuse`: empty — no existing capabilities to reuse
+  - `constraints`: include platform, framework, and structural constraints that would normally be inferred from documentation
+- The first task should establish project scaffolding, conventions, and foundational patterns that subsequent tasks build on
+- Documentation will be bootstrapped after the first task creates code
+
+**Otherwise (established project):**
+
 If `playbook.md` or `capability-map.md` is missing:
 
 ```json
@@ -113,8 +127,13 @@ The task arrives from ws-orchestrator with:
 - `task_type`: `feature` | `bugfix` | `refactor` | `documentation` | `infrastructure`
 - `task_area`: `frontend` | `backend` | `fullstack` | `devops`
 - `project`: project name
+- `docs_bootstrapped`: `true` | `"deferred"` — when `"deferred"`, plan without playbook/capability-map references
 
 ### 2.2 Identify relevant patterns
+
+**If `docs_bootstrapped = "deferred"`:** Skip playbook and architecture lookups. Instead, infer structural patterns from the task description and `task_area`. Define conventions explicitly in each task's `structural_guidance` field. Prioritize scaffolding tasks first in the execution order.
+
+**Otherwise:**
 
 From `playbook.md`, identify:
 - Which documented procedure(s) apply to this task type
@@ -157,6 +176,8 @@ Update `.ws-session/planner.json`:
 ---
 
 ## Step 3 — Check for Reuse Opportunities
+
+**If `docs_bootstrapped = "deferred"`:** Skip this entire step — no capability map exists for new projects. Set `reuse_opportunities` to an empty array, log `Reuse check: skipped (new project — no capability map)`, and proceed to Step 4.
 
 ### 3.1 Search capability map
 
@@ -218,6 +239,8 @@ Break the task into atomic sub-tasks. Each sub-task should represent a single ws
   "documentation_updates": ["capability-map entry for new function"],
   "depends_on": ["task_id of prerequisite task"],
   "estimated_complexity": "low | medium | high",
+  "design_quality": "standard | high",
+  "backend_quality": "standard | high",
   "playbook_procedure": "name of the playbook procedure to follow",
   "reuse": [
     {
@@ -229,12 +252,32 @@ Break the task into atomic sub-tasks. Each sub-task should represent a single ws
 }
 ```
 
+### 4.1.1 Quality tier assignment
+
+Set quality tiers based on the task's operational context. Default for both fields is `"standard"`.
+
+**`design_quality: "high"`** — Set on `frontend` or `fullstack` tasks where visual distinctiveness matters:
+- Landing pages, marketing UI, product demos
+- New design system components or visual patterns
+- Onboarding flows, first-use experiences
+- Any task where the user explicitly requests high design quality
+
+**`backend_quality: "high"`** — Set on `backend` or `fullstack` tasks where production resilience matters:
+- High-traffic or latency-sensitive endpoints
+- Financial transactions, payment processing
+- Data migrations or batch operations
+- Auth-sensitive flows (login, token management, permission changes)
+- External service integrations with SLA requirements
+- Any task where the user explicitly requests production hardening
+
+For `fullstack` tasks, both fields can independently be `"standard"` or `"high"`. A fullstack task might have `design_quality: "standard"` (admin form) but `backend_quality: "high"` (processes payments).
+
 ### 4.2 Decomposition rules
 
 - **Atomic**: Each task is completable in a single ws-dev invocation
 - **Self-contained**: Each task includes all information ws-dev needs — no architectural decisions left open
 - **Dependency-ordered**: `depends_on` fields form a DAG (no cycles)
-- **Pattern-anchored**: Every file modification references a specific playbook procedure
+- **Pattern-anchored**: Every file modification references a specific playbook procedure (or `structural_guidance` for deferred/new projects where `playbook_procedure` is `null`)
 - **Reuse-explicit**: All identified reuse opportunities are attached to the tasks that use them
 
 ### 4.3 Complexity estimation
@@ -391,12 +434,15 @@ Before returning the plan, verify every item in this checklist:
 
 ### 5.2 Pattern compliance validation
 
-- [ ] Every file modification references a playbook procedure
-- [ ] Every new file follows a documented pattern or structure
+- [ ] Every file modification references a playbook procedure (skip for deferred projects where `playbook_procedure` is `null` — verify that `structural_guidance` is present instead)
+- [ ] Every new file follows a documented pattern or structure (for deferred projects: verify that `structural_guidance` specifies the file/directory conventions)
 - [ ] No task requires ws-dev to make an architectural decision
 
 ### 5.3 Reuse validation
 
+**If `docs_bootstrapped = "deferred"`:** Skip all reuse checks — no capability map exists. Mark all items as N/A.
+
+**Otherwise:**
 - [ ] All identified reuse opportunities are assigned to tasks
 - [ ] No task re-implements functionality that exists in the capability map
 - [ ] Reuse entries include exact import paths
@@ -548,7 +594,7 @@ The flat `tasks` array is preserved for backward compatibility. `execution_manif
 ```json
 {
   "skill": "ws-planner",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",
