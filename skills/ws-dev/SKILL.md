@@ -97,12 +97,13 @@ Before doing anything else:
 
 ### 1.1 Accept task input
 
-ws-dev accepts either a single task definition or a group. Detect invocation type by checking for the `group` field.
+ws-dev accepts either a single task definition or a group. Detect invocation type by checking for the `group` field. The `mode` field controls how much context to load and what branch operations to perform.
 
 **Single task invocation (standard):**
 
 ```json
 {
+  "mode": "build | iterate | merge",
   "task_definition": {
     "task_id": "...",
     "title": "...",
@@ -117,22 +118,49 @@ ws-dev accepts either a single task definition or a group. Detect invocation typ
     "depends_on": [],
     "estimated_complexity": "low | medium | high",
     "design_quality": "standard | high",
+    "backend_quality": "standard | high",
     "playbook_procedure": "...",
     "reuse": []
   },
   "project": "...",
+  "task_branch": "ws/a1b2-add-user-preferences-be-task-01",
+  "feature_branch": "ws/a1b2-add-user-preferences",
   "iteration_findings": []
 }
 ```
 
-If `iteration_findings` are attached (from a ws-verifier feedback loop), also load those — they specify what to fix from a previous attempt.
+**Mode-aware execution:**
 
-If `group` field is absent: execute the existing single-task flow (Steps 1–5 as documented below).
+| Mode | Documentation Load | Branch Behavior | Purpose |
+|------|-------------------|----------------|---------|
+| `build` | Full (playbook, capability-map, architecture, area-specific) | Checks out task sub-branch (created by orchestrator), commits work there | First invocation for a task |
+| `iterate` | Lean (task definition + findings + flagged files only) | Checks out existing task sub-branch, fixes findings | After failed verification |
+| `merge` | None | Handled by orchestrator directly — ws-dev is not invoked for merge | N/A |
+
+- **`mode = "build"`** (default, or absent for backward compat):
+  - Verify and checkout the task sub-branch: `git checkout [task_branch]` (the orchestrator creates the branch in Step 4.1.1 — ws-dev only checks it out)
+  - Full documentation load (Step 1.2 as documented below)
+  - Proceed with full Step 1–5 lifecycle
+
+- **`mode = "iterate"`**:
+  - Checkout the existing task sub-branch: `git checkout [task_branch]`
+  - Load ONLY:
+    - `task_definition` (from input)
+    - `iteration_findings` (from input)
+    - The specific files listed in findings
+  - Skip Step 1.2 (full doc load) and Step 2 (pre-implementation checklist)
+  - Jump directly to Step 3.5 (Handle iteration findings)
+  - After fixes, run Step 4 (self-verification) and Step 5 (return result)
+
+`task_branch` and `feature_branch` are required for `iterate` mode. For `build` mode, `task_branch` is the name to create (passed by orchestrator).
+
+If `group` field is absent: execute the single-task flow (Steps 1–5 as documented below).
 
 **Group invocation (batched):**
 
 ```json
 {
+  "mode": "build | iterate",
   "group": {
     "group_id": "uuid",
     "group_type": "batched",
@@ -147,6 +175,8 @@ If `group` field is absent: execute the existing single-task flow (Steps 1–5 a
     "tasks": ["...task definition array..."]
   },
   "project": "...",
+  "task_branch": "ws/a1b2-add-user-preferences-group-abc1",
+  "feature_branch": "ws/a1b2-add-user-preferences",
   "iteration_findings": []
 }
 ```
@@ -154,6 +184,18 @@ If `group` field is absent: execute the existing single-task flow (Steps 1–5 a
 If `group` field is present: execute the **Group Execution Flow** (see below).
 
 ### 1.2 Load documentation
+
+**Deferred-docs detection:** If the task definition has `playbook_procedure: null` AND a `structural_guidance` field, this is a new/empty project with no existing documentation. Detect this from the task definition itself — no external flag needed.
+
+**If deferred (new/empty project):**
+
+Skip all documentation loading. The project has no existing code or documentation.
+- Log: `New project mode — implementing with structural guidance from task definition`
+- Use the task definition's `structural_guidance` field (provided by ws-planner) for conventions, file patterns, and implementation approach
+- `playbook_procedure` is `null` — follow the structural guidance directly instead
+- Proceed to Step 2 (pre-implementation checklist will adapt to use structural_guidance in place of playbook procedure)
+
+**Otherwise (established project):**
 
 Read the project's documentation suite relevant to this task:
 
@@ -209,7 +251,9 @@ Before writing any code, verify and log each item:
 
 ### 2.1 Locate playbook procedure
 
-Find the procedure named in `playbook_procedure` from the task definition. If not found:
+**If `playbook_procedure` is `null` (deferred/new project):** Skip this step. The task definition's `structural_guidance` field replaces the playbook procedure — log `Using structural guidance in place of playbook procedure` and continue to 2.2.
+
+**Otherwise:** Find the procedure named in `playbook_procedure` from the task definition. If not found:
 
 ```
 ERROR: Playbook procedure "[name]" not found in documentation/playbook.md
@@ -236,7 +280,9 @@ Update `.ws-session/dev.json`:
 
 ### 3.1 Follow playbook procedure
 
-Execute the implementation following the exact steps from the playbook procedure. Do not deviate from the documented pattern.
+**If `playbook_procedure` is `null` (deferred/new project):** Follow the `structural_guidance` from the task definition instead. The structural guidance specifies conventions, file patterns, and implementation approach directly. Apply it with the same discipline as a playbook procedure.
+
+**Otherwise:** Execute the implementation following the exact steps from the playbook procedure. Do not deviate from the documented pattern.
 
 ### 3.2 Reuse existing capabilities
 
@@ -314,7 +360,9 @@ For each constraint in the task definition's `constraints`:
 
 ### 4.3 Check for obvious playbook violations
 
-Scan your changes for:
+**If `playbook_procedure` is `null` (deferred/new project):** Skip playbook violation checks — there is no playbook to violate. Instead, verify that the implementation follows the `structural_guidance` from the task definition: file placement matches specified conventions, naming patterns are consistent, and framework setup follows the prescribed approach. Record any deviations.
+
+**Otherwise:** Scan your changes for:
 - Patterns that contradict the playbook procedure
 - Missing steps from the procedure
 - Conventions violated (naming, structure, etc.)
@@ -346,7 +394,9 @@ Return to ws-orchestrator:
 {
   "skill": "ws-dev",
   "session_id": "uuid-v4",
-  "status": "success | partial | blocked | failed",
+  "mode": "build | iterate",
+  "task_branch": "ws/a1b2-add-user-preferences-be-task-01",
+  "status": "success | partial | blocked | unfeasible | failed",
   "summary": "one-line human-readable outcome",
   "outputs": {
     "files_changed": [
@@ -381,6 +431,7 @@ Return to ws-orchestrator:
 | `success` | All acceptance criteria met, all constraints respected, no playbook violations detected |
 | `partial` | Some criteria met but issues remain (unmet criteria or detected violations noted in self-verification) |
 | `blocked` | Cannot proceed — architectural issue, missing documentation, or conflicting requirements |
+| `unfeasible` | The task definition is not implementable as specified — contradictory requirements, impossible constraints, or the plan does not match the actual codebase. Unlike `blocked`, this means the task itself needs to change, not just the environment. |
 | `failed` | Implementation could not be completed (critical error, missing dependencies) |
 
 ---
@@ -392,14 +443,17 @@ Return to ws-orchestrator:
 ```json
 {
   "skill": "ws-dev",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",
   "updated_at": "ISO-8601",
-  "status": "active | paused | complete | blocked | failed",
+  "status": "active | paused | complete | blocked | unfeasible | failed",
   "current_step": "step identifier",
   "completed_steps": [],
+  "mode": "build | iterate",
+  "task_branch": "ws/a1b2-add-user-preferences-be-task-01",
+  "feature_branch": "ws/a1b2-add-user-preferences",
   "task_definition": {},
   "group_id": null,
   "task_results": [],
@@ -466,6 +520,8 @@ If you find yourself about to:
 ## Group Execution Flow
 
 This flow is used when ws-dev is invoked with a `group` field (batched invocation from ws-orchestrator). The single-task flow above remains unchanged for non-group invocations.
+
+**Branch model for groups:** A group gets ONE task sub-branch (since all tasks in a group share context). The branch name uses the group_id: `[feature_branch]-group-[group_id_short]`. All tasks in the group are implemented on this single branch. On verification pass, the entire group branch merges into the feature branch. The orchestrator manages the branch — ws-dev receives the `task_branch` name and checks it out.
 
 ### Step 1 (group) — Load shared context
 
@@ -566,8 +622,10 @@ Return to ws-orchestrator:
 {
   "skill": "ws-dev",
   "session_id": "uuid-v4",
+  "mode": "build | iterate",
+  "task_branch": "ws/a1b2-add-user-preferences-group-abc1",
   "group_id": "uuid",
-  "status": "success | partial | blocked | failed",
+  "status": "success | partial | blocked | unfeasible | failed",
   "summary": "one-line outcome for the group",
   "task_results": [
     {

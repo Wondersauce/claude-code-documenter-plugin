@@ -20,6 +20,7 @@ You never:
 - Read source code files or diffs into your context
 - Display source code or diff content returned by sub-skills — summarize only
 - Make architectural or implementation decisions
+- Push branches to remote repositories without explicit user instruction
 
 You only:
 - Manage session state in `.ws-session/orchestrator.json`
@@ -27,6 +28,7 @@ You only:
 - Evaluate structured results returned by sub-skills
 - Present summaries and decisions to the user
 - Drive the plan → build → verify → document lifecycle
+- Manage git branches (feature branch + task sub-branches) as infrastructure operations
 
 ---
 
@@ -37,9 +39,14 @@ Before doing anything else:
 1. Check for `.ws-session/orchestrator.json`
 2. If found and status is `active` or `paused`:
    a. Read the file completely
-   b. Log: `Resuming ws-orchestrator session [session_id], current step: [current_step]`
-   c. Continue from `current_step`, skipping `completed_steps`
-3. If not found or status is `complete`:
+   b. Verify git branch state:
+      - If `feature_branch` is set and exists: `git checkout [feature_branch]`
+      - If `current_task_branch` is set: check if branch exists
+        - If exists: a prior task was interrupted mid-work. Resume from current_step.
+        - If not exists but task not in `completed_tasks`: task branch was lost — will be recreated on re-dispatch
+   c. Log: `Resuming ws-orchestrator session [session_id], step: [current_step], branch: [feature_branch or "none"]`
+   d. Continue from `current_step`, skipping `completed_steps`
+3. If not found or status is `complete` or `aborted`:
    a. Initialize a new session file (see Session File Schema below)
    b. Continue with Step 1
 
@@ -60,7 +67,17 @@ mkdir -p .ws-session
 Check if `documentation/` exists and contains at minimum `overview.md`.
 
 - If present: set `docs_bootstrapped = true` in session state
-- If absent: set `docs_bootstrapped = false`
+- If absent:
+  - Check if the repo has source files (any files matching the detected stack's source patterns, excluding test/config/build artifacts)
+  - If source files exist (established project):
+    - Log: `Documentation required. Bootstrapping now.`
+    - Invoke `Task(ws-codebase-documenter)` with mode `bootstrap`
+    - On success: set `docs_bootstrapped = true`, continue
+    - On failure: log error, present to user, **stop**
+  - If no source files (new/empty project):
+    - Log: `New project detected — no code to document yet.`
+    - Set `docs_bootstrapped = "deferred"`
+    - Continue — planner will work without prescriptive docs; documentation will bootstrap in Step 5 after the first task creates code
 
 ### 1.3 Detect project name
 
@@ -86,8 +103,8 @@ Check that the following skills are installed and available. For each missing sk
 |-------|-------------|
 | `ws-planner` | Step 3 — Planning |
 | `ws-dev` | Step 4 — Building |
-| `ws-verifier` | Step 5 — Verification |
-| `ws-codebase-documenter` | Step 2.4 bootstrap, Step 6 — Documentation |
+| `ws-verifier` | Step 4 — Per-task verification |
+| `ws-codebase-documenter` | Step 1.2 bootstrap, Step 4 per-task documentation, Step 5 final documentation pass |
 
 If any skill is missing:
 ```
@@ -115,29 +132,32 @@ Write the initial session file to `.ws-session/orchestrator.json`.
 
 ## Step 2 — Receive Task
 
-### 2.1 Accept task
+### 2.1 Accept task and handle first-run setup
 
-Accept the task description from user input. If the user invoked `/ws-orchestrator` with an argument, that argument is the task description.
+If the user invoked `/ws-orchestrator` with an argument:
+- Task description = the argument
+- If `boot_block_installed = false`:
+    After environment validation, offer boot block installation:
+    ```
+    ws-orchestrator is ready. Install the CLAUDE.md boot block to
+    auto-activate on future sessions? [Y/n]
+    ```
+    (Non-blocking — proceed regardless of answer)
 
-If no argument was provided **and** `boot_block_installed = false`, offer boot block installation first:
+If no argument was provided:
+- If `boot_block_installed = false`:
+    ```
+    Welcome to ws-orchestrator. This tool enforces a
+    plan→build→verify→document lifecycle for all development work.
 
-```
-ws-orchestrator is not yet configured to auto-activate in this project.
-
-Install the CLAUDE.md boot block? This makes ws-orchestrator the default
-operating mode for every Claude Code session in this project.
-
-1. Install boot block and continue
-2. Skip — just give me a task prompt
-```
-
-If the user chooses option 1, execute the **Boot Block Injection** procedure (see below), then prompt for a task.
-
-If no argument was provided and `boot_block_installed = true` (or the user chose option 2), prompt:
-
-```
-What would you like to build?
-```
+    1. Install boot block + give me a task
+    2. Just give me a task (no auto-activation)
+    ```
+    Execute boot block injection if option 1.
+- If `boot_block_installed = true`:
+    ```
+    What would you like to build?
+    ```
 
 ### 2.2 Classify task
 
@@ -145,30 +165,15 @@ Determine:
 - **type**: `feature` | `bugfix` | `refactor` | `documentation` | `infrastructure`
 - **area**: `frontend` | `backend` | `fullstack` | `devops`
 
-### 2.3 Check documentation prerequisite
-
-If `docs_bootstrapped = false`:
-
-```
-No project documentation found. The ws-orchestrator lifecycle requires
-documentation/playbook.md and documentation/capability-map.md to
-ensure consistent development.
-
-Bootstrap documentation first? [Y/n]
-```
-
-If user confirms:
-1. Invoke `ws-codebase-documenter` via `Task()` with mode `bootstrap`
-2. On success: set `docs_bootstrapped = true`, continue
-3. On failure: log error, present to user, stop
-
-### 2.4 Write pending task
+### 2.3 Write pending task
 
 Update `.ws-session/orchestrator.json`:
 - Set `pending_task` to the task description
 - Set `task_type` and `task_area`
 - Set `current_step` to `"3"`
 - Set `status` to `"active"`
+
+**Note:** Documentation bootstrapping is handled as a hard gate in Step 1.2, not here. By this point, `docs_bootstrapped` is either `true` (docs exist or were just bootstrapped) or `"deferred"` (new project, no code to document yet). The planner can operate with either state.
 
 ---
 
@@ -182,7 +187,10 @@ Task(ws-planner) with:
   - task_type: [classified type]
   - task_area: [classified area]
   - project: [project name]
+  - docs_bootstrapped: [true | "deferred"]
 ```
+
+When `docs_bootstrapped = "deferred"` (new/empty project), the planner operates without playbook or capability-map references and must produce more explicit structural guidance in each task definition — specifying conventions, file structure patterns, and implementation approaches directly in the task rather than referencing documentation.
 
 ### 3.2 Evaluate planner result
 
@@ -265,49 +273,105 @@ If user requests changes:
 
 Update `.ws-session/orchestrator.json`:
 - Set `status` to `"plan_approved"`
-- Set `current_step` to `"4"`
 - Add `"3"` to `completed_steps`
-- Set `iteration_count` to `0`
+
+### 3.7 Create feature branch
+
+After plan approval, create the feature branch:
+
+```
+original_branch = current git branch (record in session state)
+feature_branch = generate branch name from task:
+  - Slugify the task description (lowercase, hyphens, max 50 chars)
+  - Format: ws/[session_id_short]-[slugified-task]
+  - Example: ws/a1b2-add-user-preferences-endpoint
+
+git checkout -b [feature_branch]
+```
+
+Update `.ws-session/orchestrator.json`:
+- Set `original_branch`
+- Set `feature_branch`
+- Set `current_step` to `"4"`
 
 ---
 
-## Step 4 — Build
+## Step 4 — Build (Per-Task Loop)
 
 ### 4.0 Load execution manifest
 
-Read `execution_manifest` from `.ws-session/orchestrator.json`. If present and non-empty, walk `execution_order` sequentially. If absent (backward compatibility — planner did not produce groups), fall back to processing `current_plan` as a flat task array using the ungrouped flow for each task.
+Read `execution_manifest` from `.ws-session/orchestrator.json`. If present and non-empty, walk `execution_order` sequentially.
+
+If absent (backward compatibility — planner did not produce groups), synthesize an `execution_order` from `current_plan` by wrapping each task as `{ type: "task", task: [task_definition] }`. This ensures the per-task loop (4.1.x) works identically whether the planner produced groups or not.
 
 ### 4.1 Execute items from execution_order
 
 For each item in `execution_order`:
 
-#### If item `type` is `"task"` (ungrouped):
+#### 4.1.1 Create task sub-branch
 
-**4.1.1 Determine sub-skill**
+```
+task_branch = [feature_branch]-[area]-task-[NN]
+Example: ws/a1b2-add-user-preferences-be-task-01
+
+git checkout -b [task_branch] from [feature_branch]
+```
+
+For groups: use a single branch per group:
+```
+task_branch = [feature_branch]-group-[group_id_short]
+```
+All tasks in the group are implemented on this single branch.
+
+Update session state:
+- Set `current_task_branch`
+- Set `current_task_index`
+
+#### 4.1.2 Determine sub-skill
 
 | Task Area | Sub-skill |
 |-----------|----------|
 | `frontend` | `ws-dev/frontend` |
 | `backend` | `ws-dev/backend` |
 | `fullstack` | `ws-dev/fullstack` |
+| `devops` | `ws-dev/fullstack` |
 
-**4.1.2 Invoke ws-dev**
+`devops` maps to `ws-dev/fullstack` as a temporary routing. A dedicated `ws-dev/devops` sub-skill should be added long-term to handle infrastructure-as-code, CI/CD, and platform tasks with their own conventions.
 
+For groups: use `group.shared_context.area`.
+
+#### 4.1.3 Invoke ws-dev (build mode)
+
+**Ungrouped task:**
 ```
 Task(ws-dev/[area]) with:
+  - mode: "build"
   - task_definition: [full task object from plan]
   - project: [project name]
-  - iteration_findings: [findings from ws-verifier, if this is a re-build iteration]
+  - task_branch: [task_branch name]
+  - feature_branch: [feature_branch name]
 ```
 
-**4.1.3 Evaluate result**
+**Grouped tasks:**
+```
+Task(ws-dev/[area]) with:
+  - mode: "build"
+  - group: [full group object including group_id, shared_context, and tasks array]
+  - project: [project name]
+  - task_branch: [task_branch name]
+  - feature_branch: [feature_branch name]
+```
+
+#### 4.1.4 Evaluate dev result
 
 The dev agent returns:
 
 ```json
 {
   "skill": "ws-dev",
-  "status": "success | partial | failed | blocked",
+  "mode": "build",
+  "task_branch": "...",
+  "status": "success | partial | failed | blocked | unfeasible",
   "summary": "...",
   "outputs": {
     "files_changed": [],
@@ -319,215 +383,146 @@ The dev agent returns:
 }
 ```
 
-- If `status = "success"`: record in `completed_tasks[]`, continue to next item
-- If `status = "partial"`: record partial result, log issues, continue to next item
+- If `status = "success"` or `"partial"`: proceed to 4.1.5 (verify)
 - If `status = "blocked"`: log the architectural issue, present to user, await instruction. May require re-planning (return to Step 3).
+- If `status = "unfeasible"`: the task definition is not implementable as specified. Break out of the per-task loop and present to user:
+  ```
+  Task [title] reported unfeasible: [summary]
+  Reason: [issues]
+
+  Options:
+  1. Re-plan (send back to ws-planner with context)
+  2. Abort session (discard all work)
+  ```
+  If re-plan: clean up the current task branch (`git checkout [feature_branch]; git branch -D [task_branch]`), then return to Step 3 with feedback describing why the task was unfeasible.
+  If abort: trigger Abort Flow (Step 4.9).
 - If `status = "failed"`: log error, present to user, await instruction
 
-**4.1.4 Update session state**
+**Branch cleanup on re-plan:** When returning to Step 3 from any status (blocked, unfeasible), always:
+1. Delete the current task branch: `git checkout [feature_branch]; git branch -D [task_branch]`
+2. Set `current_task_branch` to `null`
+3. Any previously merged tasks on the feature branch are preserved — only the failing task's branch is cleaned up
 
-After each ungrouped task completes, update `.ws-session/orchestrator.json`:
-- Append to `completed_tasks`
-- Update `current_step` to reflect progress (e.g., `"4.1.[item_index]"`)
-
-#### If item `type` is `"group"`:
-
-**4.1.5 Determine sub-skill**
-
-All tasks in a group share the same `area`. Use `group.shared_context.area` to determine the sub-skill. Frontend groups invoke `Task(ws-dev/frontend)`. Backend groups invoke `Task(ws-dev/backend)`.
-
-**4.1.6 Invoke ws-dev with group**
-
-```
-Task(ws-dev/[area]) with:
-  - group: [full group object including group_id, shared_context, and tasks array]
-  - project: [project name]
-  - iteration_findings: [group-level findings from ws-verifier, if re-build iteration]
-```
-
-The presence of the `group` field signals ws-dev that this is a batched invocation.
-
-**4.1.7 Evaluate group result**
-
-The group result contains per-task results. The top-level `status` is the worst-case across all task results. Evaluate:
-
-- If `status = "success"`: record group in `completed_groups[]`, extract per-task results into `completed_tasks[]`, continue
-- If `status = "partial"`: record group and per-task results, log issues, continue
-- If `status = "blocked"`: log architectural issue with the specific task that blocked, present to user, await instruction — may require re-planning
-- If `status = "failed"`: log error, present to user, await instruction
-
-**4.1.8 Update session state**
-
-After each group completes, update `.ws-session/orchestrator.json`:
-- Append full group result to `completed_groups[]`
-- Append all per-task results from `task_results[]` into `completed_tasks[]` (ws-verifier consumes the flat array)
-- Update `current_step` to reflect progress (e.g., `"4.1.[item_index]"`)
-
-### 4.2 Build complete
-
-When all items in `execution_order` are processed:
-- Set `status` to `"build_complete"`
-- Set `current_step` to `"5"`
-- Add `"4"` to `completed_steps`
-
----
-
-## Step 5 — Verify
-
-### 5.0 Prepare verification input
-
-Build the verification input with group-aware data if available:
-
-```json
-{
-  "plan": ["...flat task array from current_plan..."],
-  "build_results": ["...completed_tasks flat array..."],
-  "execution_manifest": {},
-  "completed_groups": [],
-  "project": "project-name"
-}
-```
-
-`execution_manifest` and `completed_groups` are included only when the plan used grouping. If no groups exist, these fields are omitted and ws-verifier falls back to standard single-task verification.
-
-### 5.1 Invoke ws-verifier
+#### 4.1.5 Invoke ws-verifier (single task)
 
 ```
 Task(ws-verifier) with:
-  - plan: [current_plan]
-  - build_results: [completed_tasks array with all results]
-  - execution_manifest: [execution_manifest, if present]
-  - completed_groups: [completed_groups array, if present]
+  - task: [single task definition (or group)]
+  - build_result: [single task result]
   - project: [project name]
 ```
 
-### 5.2 Evaluate verification result
+The verifier now receives and verifies ONE task (or one group) at a time.
 
-The verifier returns:
-
-```json
-{
-  "skill": "ws-verifier",
-  "status": "pass | partial | fail",
-  "summary": "...",
-  "outputs": {
-    "findings": [
-      {
-        "task_id": "...",
-        "group_id": "...",
-        "severity": "HIGH | MEDIUM | LOW",
-        "domain": "acceptance | pattern | reuse | constraint | documentation",
-        "file": "path/to/file",
-        "line": 42,
-        "description": "what's wrong",
-        "expected": "what should be there",
-        "found": "what was found",
-        "recommended_fix": "how to fix"
-      }
-    ],
-    "task_results": [],
-    "criteria_met": "X/Y",
-    "pass_rate": "percentage"
-  },
-  "next_action": "..."
-}
-```
-
-### 5.3 Handle verification outcome
+#### 4.1.6 Handle verification outcome
 
 **If `status = "pass"`:**
-- Set `current_step` to `"6"`
-- Add `"5"` to `completed_steps`
-- Proceed to Step 6
+- Proceed to 4.1.8 (document and merge)
 
 **If `status = "fail"` or `"partial"`:**
 
-1. Write findings to `.ws-session/orchestrator.json` under `verification_findings`
+1. Check iteration count for THIS item (per-task, not session-wide):
+   - For ungrouped tasks: use `task_iteration_counts[task_id]`
+   - For grouped tasks: use `task_iteration_counts[group_id]`
 
-2. **Classify findings — plan-conflict detection:**
+2. If iterations < 3:
+   - Increment the iteration count for this item
+   - Log: `Task [title] verification iteration [N]/3: [summary of findings]`
+   - Invoke ws-dev in iterate mode:
+     ```
+     Task(ws-dev/[area]) with:
+       - mode: "iterate"
+       - task_definition: [task]
+       - iteration_findings: [findings from verifier]
+       - task_branch: [task_branch]
+       - feature_branch: [feature_branch]
+     ```
+   - Return to 4.1.5 (re-verify)
 
-   Before deciding whether to auto-retry, classify each finding as either an **implementation error** or a **plan conflict**:
+3. If iterations >= 3:
+   - Present to user:
+     ```
+     Task [title] failed verification after 3 iterations.
+     Findings: [summary]
+     1. Accept as-is (merge with known issues)
+     2. Abort entire session (discard ALL work from tasks 1-N)
+     ```
+   - If accept-as-is: proceed to 4.1.8
+   - If abort: go to Step 4.9 (Abort Flow)
 
-   | Classification | Definition | Action |
-   |---------------|-----------|--------|
-   | **Implementation error** | ws-dev missed a requirement, used wrong pattern, or introduced a bug — the plan is correct but the output is wrong | Auto-retryable |
-   | **Plan conflict** | ws-dev intentionally diverged from the plan because the plan was infeasible, ambiguous, or contradicted by the actual codebase — re-dispatching will produce the same divergence | Escalate to user |
+#### 4.1.7 [Reserved]
 
-   **How to detect plan conflicts:** A finding is a plan conflict when:
-   - The verifier's `description` or `found` field indicates ws-dev built something structurally different from what the plan specified (e.g., different API shape, different component hierarchy, different data flow)
-   - The ws-dev build result's `issues[]` array for the affected task contains an entry explaining why it deviated
-   - The same finding appeared in a previous iteration's `verification_findings` with substantially identical `description` and `file` — ws-dev was told to fix it and chose the same approach again
+#### 4.1.8 Document and merge task branch
 
-   **If any plan-conflict findings exist, escalate immediately** — do not auto-retry. Present to the user:
+**Run per-task documenter:**
+```
+Task(ws-codebase-documenter) with:
+  - mode: incremental
+  - skip_pr: true
+```
 
-   ```
-   ## Plan Conflict Detected
+If the documenter fails: log a warning and continue to merge. The final documenter pass in Step 5 serves as the safety net. Do not block the merge on documenter failure.
 
-   The verifier found discrepancies where ws-dev's implementation intentionally
-   diverged from the plan. Auto-retrying won't resolve these — a decision is needed.
+**Merge task branch into feature branch:**
+```
+git checkout [feature_branch]
+git merge [task_branch] --no-ff -m "task: [task title]"
+git branch -d [task_branch]
+```
 
-   [If iteration_count > 0:]
-   **Note:** This is iteration [N]/[max]. [X] implementation-error findings were
-   already fixed in previous iterations. The remaining conflicts are structural.
+**If merge conflict occurs:** Attempt to resolve the conflict within the task context. If the conflict is trivially resolvable (e.g., documentation files, non-overlapping additions), resolve it and complete the merge. If the conflict is structural or ambiguous, present it to the user:
+```
+Merge conflict merging task branch [task_branch] into feature branch.
+Conflicting files: [list]
 
-   **Conflicts:**
-   | Task | Plan Specified | Dev Implemented | Reason (if reported) |
-   |------|---------------|-----------------|---------------------|
-   | ...  | ...           | ...             | ...                 |
+Options:
+1. Resolve manually (show conflict details)
+2. Abort session (discard all work)
+```
 
-   [If non-conflict findings also exist:]
-   **Additionally, [Y] implementation-error findings remain:**
-   | Severity | Domain | File | Description |
-   |----------|--------|------|-------------|
-   | ...      | ...    | ...  | ...         |
+Update session state:
+- Append `task_branch` to `merged_task_branches[]`
+- Set `current_task_branch` to `null`
+- Append task to `completed_tasks[]`
 
-   How would you like to proceed?
-   1. Amend the plan to match what ws-dev built (re-verify only)
-   2. Override ws-dev — enforce the original plan (re-build affected tasks)
-   3. Re-plan this task from scratch
-   4. Accept current state as-is
-   ```
+#### 4.1.9 Check for pending tasks
 
-   - If user chooses **1 (Amend plan)**: Update `current_plan` with the dev's approach for affected tasks, then return to Step 5 (re-verify against amended plan). Do not re-build.
-   - If user chooses **2 (Override dev)**: Attach findings as `iteration_findings` with an explicit `enforce_plan: true` flag, increment `iteration_count`, and return to Step 4 for the affected tasks only.
-   - If user chooses **3 (Re-plan)**: Return to Step 3 with the original task description and a `feedback` note describing the conflict.
-   - If user chooses **4 (Accept)**: Proceed to Step 6.
+If more items in `execution_order`: loop to 4.1.1
 
-   **If no plan-conflict findings exist** (all findings are implementation errors), continue to step 3.
+If no more items:
+- Set `status` to `"build_complete"`
+- Set `current_step` to `"5"`
+- Add `"4"` to `completed_steps`
+- Proceed to Step 5
 
-3. **Check `iteration_count` (implementation-error auto-retry):**
-   - If `iteration_count < 3` (configurable via `max_iterations`):
-     - Increment `iteration_count`
-     - Log: `Verification iteration [N]/[max]: [summary of findings]`
-     - Map findings to tasks and groups, then return to Step 4 with only the affected items.
+### 4.9 Abort Flow
 
-     **Finding-to-task mapping (ungrouped tasks):** For each finding without a `group_id` (or where `group_id` is null), match its `file` field against each task's `files_to_create` and `files_to_modify` arrays. A finding is associated with a task if the finding's file appears in that task's file lists. If a finding's file doesn't match any task (e.g., an indirect side-effect), associate it with the task whose `files_to_modify` contains the closest parent directory, or with the last-executed task as a fallback. Attach matched findings as `iteration_findings` on each affected task. Do not re-run tasks with zero associated findings.
+Present explicit warning:
+```
+WARNING: This will discard ALL work from this session.
+Tasks 1 through [N] will be lost. No code or documentation
+changes will be retained.
 
-     **Finding-to-group mapping (grouped tasks):** For each finding with a non-null `group_id`, re-queue the **entire group**, not just the individual task. The group's `shared_context` is preserved on re-queue. Attach findings to the group re-queue as a merged `iteration_findings` array. Each finding retains its `task_id` attribution so ws-dev knows which tasks within the group to re-implement. Tasks in the group without findings in the current iteration are not re-implemented — they carry forward their most recent `task_results` entry. If findings span multiple groups, each affected group is re-queued independently.
+Confirm abort? [Y/n]
+```
 
-     **Carry-forward baseline across iterations:** On each re-queue, the carry-forward baseline for each task in a group is the most recent `task_results` entry for that `task_id` stored in `completed_groups`. Tasks without findings in the current iteration carry forward their last result entry unchanged. This applies consistently across all iterations — on iteration 3, a task that passed on iteration 1 and has had no findings since carries its iteration 1 result forward.
-   - If `iteration_count >= 3`:
-     - Present all findings to the user:
-       ```
-       ## Verification Failed After [max] Iterations
+If user confirms:
+1. `git checkout [original_branch]`
+2. `git branch -D [feature_branch]` (deletes feature branch + all merged work)
+3. Delete any remaining task sub-branches
+4. Set session `status` to `"aborted"`
+5. Archive session
+6. Log: `Session aborted. All branches cleaned up.`
+7. **STOP.**
 
-       **Findings:**
-       | Severity | Domain | File | Description |
-       |----------|--------|------|-------------|
-       | HIGH     | ...    | ...  | ...         |
-
-       How would you like to proceed?
-       1. Continue iterating
-       2. Accept current state
-       3. Abort and discard changes
-       ```
-     - Await user instruction
+If user declines:
+- Return to the accept/abort prompt (user can choose accept-as-is)
 
 ---
 
-## Step 6 — Document
+## Step 5 — Final Documentation Pass
 
-### 6.1 Invoke ws-codebase-documenter
+### 5.1 Invoke ws-codebase-documenter on feature branch
 
 ```
 Task(ws-codebase-documenter) with:
@@ -535,32 +530,33 @@ Task(ws-codebase-documenter) with:
   - skip_pr: true
 ```
 
+This should produce minimal or no updates — each task already ran the documenter before merging. This is a consistency check.
+
 **The `skip_pr: true` flag is critical** — it tells ws-codebase-documenter to update documentation files and commit them but NOT create a pull request. Without this flag, the documenter would create its own PR, conflicting with the orchestrator-managed workflow. The orchestrator (or the user) handles PR creation for the entire session.
 
 **Note:** ws-codebase-documenter maintains its own state at `documentation/.docstate` and `documentation/config.json` — it does not use `.ws-session/documenter.json`. Do not attempt to read documenter state from `.ws-session/`.
 
-### 6.2 Evaluate result
+### 5.2 Evaluate result
 
-- If documentation updated successfully: continue
-- If consistency violations found with HIGH severity: present to user as a warning (do not block completion)
+- If documentation updated: log what changed
+- If consistency violations found with HIGH severity: warn user (do not block completion)
 
-### 6.3 Complete session
+### 5.3 Complete session
 
 Update `.ws-session/orchestrator.json`:
 - Set `docs_updated` to `true`
 - Set `status` to `"complete"`
 - Set `current_step` to `"complete"`
-- Add `"6"` to `completed_steps`
+- Add `"5"` to `completed_steps`
 
-### 6.4 Present completion summary
+### 5.4 Present completion summary
 
 ```
 ## Session Complete
 
 **Task:** [original task description]
-**Status:** Complete
-**Sub-tasks:** [X] completed
-**Verification:** Passed (iteration [N])
+**Branch:** [feature_branch] (ready for review/merge)
+**Sub-tasks:** [X] completed, [Y] verified
 **Documentation:** Updated
 
 ### Files Changed
@@ -570,7 +566,9 @@ Update `.ws-session/orchestrator.json`:
 - [list from documenter result]
 ```
 
-### 6.5 Archive session
+**Note:** The feature branch is NOT auto-merged into the original branch. The user reviews it (or creates a PR). This is a deliberate safety choice — the orchestrator never pushes to remote or merges to the user's working branch.
+
+### 5.5 Archive session
 
 Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
 
@@ -583,15 +581,15 @@ Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
 ```json
 {
   "skill": "ws-orchestrator",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",
   "updated_at": "ISO-8601",
-  "status": "active | paused | plan_approved | build_complete | complete | failed",
+  "status": "active | paused | plan_approved | build_complete | complete | aborted | failed",
   "current_step": "step identifier",
   "completed_steps": [],
-  "docs_bootstrapped": true,
+  "docs_bootstrapped": "true | false | deferred",
   "boot_block_installed": false,
   "pending_task": "user's task description",
   "task_type": "feature | bugfix | refactor | documentation | infrastructure",
@@ -599,17 +597,33 @@ Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
   "current_plan": [],
   "execution_manifest": {},
   "completed_tasks": [],
-  "completed_groups": [],
-  "iteration_count": 0,
+  "original_branch": "main",
+  "feature_branch": "ws/a1b2-add-user-preferences",
+  "current_task_branch": null,
+  "merged_task_branches": [],
+  "task_iteration_counts": {},
+  "current_task_index": 0,
   "max_iterations": 3,
-  "verification_findings": [],
-  "plan_conflicts": [],
   "docs_updated": false,
   "outputs": {},
   "errors": [],
   "notes": ""
 }
 ```
+
+**Fields removed from v1.0.0:**
+- `iteration_count` — replaced by per-task `task_iteration_counts`
+- `verification_findings` — now per-task, transient between build/verify calls
+- `plan_conflicts` — handled inline in per-task loop
+- `completed_groups` — groups still work but merge into per-task loop via shared branches
+
+**Fields added in v2.0.0:**
+- `original_branch` — the branch the user was on when the session started (for abort rollback)
+- `feature_branch` — the session's feature branch (created after plan approval)
+- `current_task_branch` — the active task sub-branch (null when between tasks)
+- `merged_task_branches` — history of merged task branches
+- `task_iteration_counts` — per-task iteration tracking (keyed by task_id)
+- `current_task_index` — index into execution_order for recovery
 
 ### State update rules
 
@@ -696,10 +710,11 @@ If a `Task()` call fails to invoke (skill not found, crash, timeout):
    Sub-skill [name] failed: [error]
    Options:
    1. Retry
-   2. Skip this step (may leave incomplete work)
-   3. Abort session
+   2. Skip this task (continue to next task)
+   3. Abort session (discard all work)
    ```
 3. Await user instruction
+4. If option 3: trigger the Abort Flow (Step 4.9)
 
 ### Session file corruption
 
