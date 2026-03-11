@@ -263,11 +263,20 @@ Add these checks:
 | Observability instrumentation | Structured logging with correlation IDs, health checks present |
 | Security posture | Input sanitization, audit logging for sensitive ops, no leaked secrets |
 
+### Step 4.5 — Build Validation (backend additions)
+
+This step follows the same procedure as ws-dev Step 4.5 (see `../SKILL.md`). Backend-specific notes:
+
+- For compiled languages (Go, Rust, Java, .NET), build validation catches type errors, missing imports, and signature mismatches that self-verification cannot
+- For interpreted languages (Python, Node.js without TypeScript), the build step may not exist — lint validation becomes the primary gate
+- Migration files should not cause build failures, but if the project has migration validation tooling (e.g., `npx prisma validate`, `python manage.py check`), detect and run it
+- If the project has a test database setup that the build depends on, and it is unavailable, log the pre-existing error and skip — do not attempt to configure databases
+
 ---
 
 ## Result Format
 
-Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with backend-specific entries in `self_verification`:
+Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with backend-specific entries in `self_verification` and `build_validation`:
 
 ```json
 {
@@ -286,6 +295,14 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
       "no_sensitive_data_exposure": true,
       "no_hardcoded_config": true
     }
+  },
+  "build_validation": {
+    "status": "passed | failed | skipped",
+    "build_command": "cargo build",
+    "lint_command": "cargo clippy",
+    "attempts": 1,
+    "pre_existing_errors": [],
+    "errors": []
   }
 }
 ```
@@ -326,6 +343,14 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
       "observability_instrumentation": true,
       "security_posture": true
     }
+  },
+  "build_validation": {
+    "status": "passed",
+    "build_command": "cargo build",
+    "lint_command": "cargo clippy",
+    "attempts": 1,
+    "pre_existing_errors": [],
+    "errors": []
   }
 }
 ```

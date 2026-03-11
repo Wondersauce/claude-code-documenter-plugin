@@ -260,11 +260,20 @@ Add these checks:
 | Complexity match | Code richness matches aesthetic ambition per the Complexity Matching table |
 | Atmospheric detail | Backgrounds and textures reinforce the direction (not flat/default unless that IS the direction) |
 
+### Step 4.5 — Build Validation (frontend additions)
+
+This step follows the same procedure as ws-dev Step 4.5 (see `../SKILL.md`). Frontend-specific notes:
+
+- If the project uses a framework build (Next.js, Vite, Webpack, etc.), the standard `npm run build` detection covers it
+- For projects with both `build` and `typecheck` scripts, run both — TypeScript type errors in components are common frontend build failures
+- CSS/SCSS compilation errors (missing variables, invalid token references) are build errors — fix them before returning
+- If the project has a Storybook setup (`scripts.build-storybook`), do **not** include it in build validation — it is a documentation tool, not a build gate
+
 ---
 
 ## Result Format
 
-Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with frontend-specific entries in `self_verification`:
+Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with frontend-specific entries in `self_verification` and `build_validation`:
 
 ```json
 {
@@ -281,6 +290,14 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
       "component_reuse_verified": true,
       "style_guide_compliant": true
     }
+  },
+  "build_validation": {
+    "status": "passed | failed | skipped",
+    "build_command": "npm run build",
+    "lint_command": "npm run lint",
+    "attempts": 1,
+    "pre_existing_errors": [],
+    "errors": []
   }
 }
 ```
@@ -318,6 +335,14 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
       "complexity_match": true,
       "atmospheric_detail": true
     }
+  },
+  "build_validation": {
+    "status": "passed",
+    "build_command": "npm run build",
+    "lint_command": "npm run lint",
+    "attempts": 1,
+    "pre_existing_errors": [],
+    "errors": []
   }
 }
 ```
