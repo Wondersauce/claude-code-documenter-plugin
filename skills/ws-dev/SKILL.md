@@ -498,6 +498,97 @@ Record any violations found — do not fix them silently. ws-verifier will catch
 
 Update `.ws-session/dev.json`:
 - Set `self_verification` with results from 4.1-4.3
+- Set `current_step` to `"4.5"`
+
+---
+
+## Step 4.5 — Build Validation
+
+After self-verification, validate that the project builds cleanly. **Do not return results until the build passes.**
+
+### 4.5.1 Detect build system
+
+Detect the project's build/compile/lint tooling from the project root. Check in this order and use the **first match**:
+
+| Indicator | Build Command | Type |
+|-----------|--------------|------|
+| `package.json` with `scripts.build` | `npm run build` (or `yarn build` / `pnpm build` per lockfile) | Build |
+| `package.json` with `scripts.typecheck` | `npm run typecheck` | Type check |
+| `tsconfig.json` (no build script) | `npx tsc --noEmit` | Type check |
+| `pyproject.toml` with `[tool.mypy]` | `mypy .` | Type check |
+| `Cargo.toml` | `cargo build` | Build |
+| `go.mod` | `go build ./...` | Build |
+| `*.csproj` or `*.sln` | `dotnet build` | Build |
+| `pom.xml` | `mvn compile` | Build |
+| `build.gradle` or `build.gradle.kts` | `gradle build` | Build |
+| `composer.json` with `scripts.build` | `composer run build` | Build |
+| `Makefile` with `build` target | `make build` | Build |
+
+**Lint detection (run in addition to build if available):**
+
+| Indicator | Lint Command |
+|-----------|-------------|
+| `package.json` with `scripts.lint` | `npm run lint` |
+| `pyproject.toml` with `[tool.ruff]` or `.ruff.toml` | `ruff check .` |
+| `pyproject.toml` with `[tool.flake8]` or `.flake8` | `flake8 .` |
+| `.eslintrc*` or `eslint.config.*` (no lint script) | `npx eslint .` |
+| `golangci-lint` in project | `golangci-lint run` |
+| `Cargo.toml` | `cargo clippy` |
+
+If no build system is detected: log `No build system detected — skipping build validation`, set `build_validation.status` to `"skipped"`, and proceed to Step 5.
+
+### 4.5.2 Run build
+
+Execute the detected build command. Capture stdout and stderr.
+
+```
+Running build validation: [command]
+```
+
+### 4.5.3 Run lint (if available)
+
+If a lint command was detected, run it after the build:
+
+```
+Running lint validation: [command]
+```
+
+### 4.5.4 Evaluate results
+
+**If build and lint both pass:**
+- Log: `Build validation passed`
+- Set `build_validation.status` to `"passed"`
+- Proceed to Step 5
+
+**If build or lint fails:**
+
+1. Log: `Build validation failed — fixing issues`
+2. Read the error output and identify the failing files and error messages
+3. Fix each error in the changed files. **Only fix files that ws-dev created or modified in this task** — if the build failure is in a file ws-dev did not touch, it is a pre-existing issue:
+   - Log: `Pre-existing build error in [file] — not caused by this task, skipping`
+   - Record in `build_validation.pre_existing_errors[]`
+4. After applying fixes, re-run the build (and lint if applicable)
+5. **Repeat up to 3 fix-and-rebuild cycles.** If the build still fails after 3 attempts:
+   - Set `build_validation.status` to `"failed"`
+   - Set `build_validation.errors` to the remaining error output
+   - Log: `Build validation failed after 3 fix attempts — returning with build errors noted`
+   - Record all remaining errors in `issues[]`
+   - **Do not block the return** — proceed to Step 5 with the build failure noted. The verifier will catch it as a finding.
+
+### 4.5.5 Update session state
+
+Update `.ws-session/dev.json`:
+- Set `build_validation` with:
+  ```json
+  {
+    "status": "passed | failed | skipped",
+    "build_command": "npm run build",
+    "lint_command": "npm run lint",
+    "attempts": 1,
+    "pre_existing_errors": [],
+    "errors": []
+  }
+  ```
 - Set `current_step` to `"5"`
 
 ---
@@ -542,6 +633,14 @@ Return to ws-orchestrator:
       "constraint_results": [],
       "playbook_violations": []
     },
+    "build_validation": {
+      "status": "passed | failed | skipped",
+      "build_command": "npm run build",
+      "lint_command": "npm run lint",
+      "attempts": 1,
+      "pre_existing_errors": [],
+      "errors": []
+    },
     "issues": []
   },
   "issues": [],
@@ -553,7 +652,7 @@ Return to ws-orchestrator:
 
 | Status | Condition |
 |--------|-----------|
-| `success` | All acceptance criteria met, all constraints respected, no playbook violations detected |
+| `success` | All acceptance criteria met, all constraints respected, no playbook violations detected, build passes (or no build system) |
 | `partial` | Some criteria met but issues remain (unmet criteria or detected violations noted in self-verification) |
 | `blocked` | Cannot proceed — architectural issue, missing documentation, or conflicting requirements |
 | `unfeasible` | The task definition is not implementable as specified — contradictory requirements, impossible constraints, or the plan does not match the actual codebase. Unlike `blocked`, this means the task itself needs to change, not just the environment. |
@@ -588,6 +687,7 @@ Return to ws-orchestrator:
   "checklist": {},
   "files_changed": [],
   "self_verification": {},
+  "build_validation": {},
   "outputs": {},
   "errors": [],
   "notes": ""
@@ -736,6 +836,14 @@ For each implemented task, record independently:
 
 Do not aggregate across tasks. ws-verifier requires per-task evidence.
 
+### Step 4.5 (group) — Build Validation
+
+Run the same build validation procedure as Step 4.5 in the single-task flow. For groups, this runs **once** after all tasks in the group are implemented and self-verified — not per-task.
+
+If the build fails, fix errors in files changed by any task in the group (attribute fixes to the originating task). The same 3-attempt limit and pre-existing error handling apply.
+
+The `build_validation` result is included at the top level of the group result (not per-task).
+
 ### Step 5 (group) — Write session file and return group result
 
 Update `.ws-session/dev.json`:
@@ -777,6 +885,14 @@ Return to ws-orchestrator:
   "shared_context_used": {
     "docs_loaded": [],
     "reuse_applied": []
+  },
+  "build_validation": {
+    "status": "passed | failed | skipped",
+    "build_command": "...",
+    "lint_command": "...",
+    "attempts": 1,
+    "pre_existing_errors": [],
+    "errors": []
   },
   "issues": [],
   "next_action": "..."
