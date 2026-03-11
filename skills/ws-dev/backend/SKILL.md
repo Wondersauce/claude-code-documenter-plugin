@@ -165,6 +165,14 @@ If the task context implies high resilience needs but the code is minimal and un
 
 When invoked with `nested: true` (from ws-dev fullstack orchestration), skip all session file operations — the parent ws-dev instance owns `.ws-session/dev.json`. Do not read, create, or write session files. Return your structured result directly to the parent.
 
+**Fullstack context:** When invoked from fullstack orchestration, your result will be analyzed to extract API context for the frontend sub-task. To enable accurate handoff, ensure your implementation output clearly documents:
+- New endpoints created (paths, HTTP methods, purpose)
+- Request and response shapes for each endpoint
+- Auth requirements for new endpoints
+- Shared types or interfaces created (with file locations)
+
+Include this information in your `files_changed` descriptions — the parent ws-dev extracts it to build the `backend_context` field that the frontend sub-task receives.
+
 ---
 
 ## Execution Steps

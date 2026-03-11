@@ -333,10 +333,12 @@ Update session state:
 |-----------|----------|
 | `frontend` | `ws-dev/frontend` |
 | `backend` | `ws-dev/backend` |
-| `fullstack` | `ws-dev/fullstack` |
-| `devops` | `ws-dev/fullstack` |
+| `fullstack` | `ws-dev` |
+| `devops` | `ws-dev` |
 
-`devops` maps to `ws-dev/fullstack` as a temporary routing. A dedicated `ws-dev/devops` sub-skill should be added long-term to handle infrastructure-as-code, CI/CD, and platform tasks with their own conventions.
+`fullstack` routes to the parent `ws-dev` skill (not a sub-skill) because fullstack orchestration involves splitting the task into backend and frontend components and delegating to both sub-skills internally. The parent `ws-dev` handles this split via its Fullstack Orchestration flow.
+
+`devops` also routes to the parent `ws-dev` as a temporary routing. A dedicated `ws-dev/devops` sub-skill should be added long-term to handle infrastructure-as-code, CI/CD, and platform tasks with their own conventions.
 
 For groups: use `group.shared_context.area`.
 
@@ -344,7 +346,7 @@ For groups: use `group.shared_context.area`.
 
 **Ungrouped task:**
 ```
-Task(ws-dev/[area]) with:
+Task([sub-skill from 4.1.2]) with:
   - mode: "build"
   - task_definition: [full task object from plan]
   - project: [project name]
@@ -354,7 +356,7 @@ Task(ws-dev/[area]) with:
 
 **Grouped tasks:**
 ```
-Task(ws-dev/[area]) with:
+Task([sub-skill from 4.1.2]) with:
   - mode: "build"
   - group: [full group object including group_id, shared_context, and tasks array]
   - project: [project name]
@@ -430,7 +432,7 @@ The verifier now receives and verifies ONE task (or one group) at a time.
    - Log: `Task [title] verification iteration [N]/3: [summary of findings]`
    - Invoke ws-dev in iterate mode:
      ```
-     Task(ws-dev/[area]) with:
+     Task([sub-skill from 4.1.2]) with:
        - mode: "iterate"
        - task_definition: [task]
        - iteration_findings: [findings from verifier]

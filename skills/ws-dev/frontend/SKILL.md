@@ -153,6 +153,17 @@ If the direction is maximalist but the code is sparse, or the direction is minim
 
 When invoked with `nested: true` (from ws-dev fullstack orchestration), skip all session file operations — the parent ws-dev instance owns `.ws-session/dev.json`. Do not read, create, or write session files. Return your structured result directly to the parent.
 
+**Fullstack context:** When invoked from fullstack orchestration, the task definition may include a `backend_context` field containing:
+- API endpoints created by the backend sub-task (paths, methods, request/response shapes)
+- Data models defined (field names, types, relationships)
+- Shared types or interfaces created (with file locations)
+
+Use this context to:
+- Build API client integration against the actual endpoints — do not guess URLs or response shapes
+- Import or reference shared types from the locations specified in `backend_context.shared_types_files`
+- Match the UI's data expectations to the backend's response shapes
+- Respect auth requirements documented in the endpoint definitions
+
 ---
 
 ## Execution Steps
