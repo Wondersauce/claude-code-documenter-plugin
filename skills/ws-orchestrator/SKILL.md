@@ -39,13 +39,28 @@ Before doing anything else:
 1. Check for `.ws-session/orchestrator.json`
 2. If found and status is `active` or `paused`:
    a. Read the file completely
-   b. Verify git branch state:
+   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (`2.1.0`). Read the current version from `.claude-plugin/plugin.json` → `version` field.
+      - If `plugin_version` is missing from the session file: treat as a version mismatch (pre-versioning session).
+      - If versions do not match:
+        1. **Do not attempt silent recovery.** Present to user:
+           ```
+           Session version mismatch detected.
+           Session created with plugin v[session_version], current plugin is v[current_version].
+
+           Options:
+           1. Attempt recovery — load what we can, flag any missing or changed fields
+           2. Dump session — archive it and start fresh
+           ```
+        2. If user chooses recovery: validate every expected field in the session file against the current schema. For each missing or unrecognized field, log: `WARNING: Field [field_name] missing or incompatible — [reason]`. If any required field (`session_id`, `status`, `current_step`, `completed_steps`) is missing, **stop recovery** and report: `Recovery failed: required field [field_name] missing. Session was created with v[session_version] which uses a different schema. Starting fresh.` Then initialize a new session.
+        3. If user chooses dump: rename to `.ws-session/archive/[session_id]-dumped-v[session_version].json`, initialize a new session, continue with Step 1.
+      - If versions match: proceed normally.
+   c. Verify git branch state:
       - If `feature_branch` is set and exists: `git checkout [feature_branch]`
       - If `current_task_branch` is set: check if branch exists
         - If exists: a prior task was interrupted mid-work. Resume from current_step.
         - If not exists but task not in `completed_tasks`: task branch was lost — will be recreated on re-dispatch
-   c. Log: `Resuming ws-orchestrator session [session_id], step: [current_step], branch: [feature_branch or "none"]`
-   d. Continue from `current_step`, skipping `completed_steps`
+   d. Log: `Resuming ws-orchestrator session [session_id], step: [current_step], branch: [feature_branch or "none"]`
+   e. Continue from `current_step`, skipping `completed_steps`
 3. If not found or status is `complete` or `aborted`:
    a. Initialize a new session file (see Session File Schema below)
    b. Continue with Step 1
@@ -566,6 +581,19 @@ Update `.ws-session/orchestrator.json`:
 
 ### Documentation Updated
 - [list from documenter result]
+
+### Token Usage
+Orchestrator: [token_usage.orchestrator] tokens
+Planner: [token_usage.planner] tokens
+[For each entry in token_usage.tasks:]
+Task: [task_title]
+  Skill: dev — [skill_tokens.dev] tokens
+  Skill: verifier — [skill_tokens.verifier] tokens
+  Skill: documenter — [skill_tokens.documenter] tokens
+  Retries: [retries]
+Final Documenter: [token_usage.final_documenter] tokens
+
+Total Tokens: [token_usage.total]
 ```
 
 **Note:** The feature branch is NOT auto-merged into the original branch. The user reviews it (or creates a PR). This is a deliberate safety choice — the orchestrator never pushes to remote or merges to the user's working branch.
@@ -583,7 +611,8 @@ Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
 ```json
 {
   "skill": "ws-orchestrator",
-  "version": "2.0.0",
+  "version": "2.1.0",
+  "plugin_version": "2.1.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",
@@ -607,17 +636,56 @@ Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
   "current_task_index": 0,
   "max_iterations": 3,
   "docs_updated": false,
+  "token_usage": {
+    "orchestrator": 0,
+    "planner": 0,
+    "tasks": [],
+    "final_documenter": 0,
+    "total": 0
+  },
   "outputs": {},
   "errors": [],
   "notes": ""
 }
 ```
 
+**`token_usage` structure:**
+
+The `orchestrator` and `planner` fields track tokens consumed by the orchestrator context and the planner Task() call respectively. The `tasks` array contains one entry per execution item (task or group), structured as:
+
+```json
+{
+  "task_title": "short title from task definition",
+  "skill_tokens": {
+    "dev": 0,
+    "verifier": 0,
+    "documenter": 0
+  },
+  "retries": 0
+}
+```
+
+When the verifier sends a task back to ws-dev for iteration, the dev and verifier token counts for that task are **cumulative** — add each iteration's tokens to the running total. Increment `retries` by 1 for each iteration cycle (verifier fail/partial → ws-dev re-invocation). A task that passes on the first attempt has `retries: 0`.
+
+`final_documenter` tracks tokens for the Step 5 final documentation pass.
+
+`total` is the sum of all token counts across all fields.
+
+**Token tracking rules:**
+- After every Task() call, read the token usage from the Task() result metadata and record it in the appropriate field
+- Update `total` after every token recording
+- Token counts are informational metadata — never block or warn based on token counts
+- If token metadata is unavailable from a Task() call, record `0` and note in `errors[]`: `"Token metadata unavailable for [skill] invocation"`
+
 **Fields removed from v1.0.0:**
 - `iteration_count` — replaced by per-task `task_iteration_counts`
 - `verification_findings` — now per-task, transient between build/verify calls
 - `plan_conflicts` — handled inline in per-task loop
 - `completed_groups` — groups still work but merge into per-task loop via shared branches
+
+**Fields added in v2.1.0:**
+- `plugin_version` — the plugin version that created this session (read from `.claude-plugin/plugin.json`). Used by Step 0 to detect version mismatches on recovery.
+- `token_usage` — per-skill token tracking for the session (see structure above)
 
 **Fields added in v2.0.0:**
 - `original_branch` — the branch the user was on when the session started (for abort rollback)

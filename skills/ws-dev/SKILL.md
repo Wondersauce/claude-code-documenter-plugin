@@ -198,16 +198,20 @@ Before doing anything else:
 1. Check for `.ws-session/dev.json`
 2. If found and status is `active` or `paused` **and `group_id` is null**:
    a. Read the file completely — this is a standard single-task recovery
-   b. Log: `Resuming ws-dev session [session_id], current step: [current_step]`
-   c. Continue from `current_step`, skipping `completed_steps`
+   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version`).
+      - If `plugin_version` is missing or does not match: **do not attempt recovery.** Log: `Session version mismatch (session: v[session_version or "unknown"], current: v[current_version]). Cannot recover — initializing fresh session.` Initialize a new session file and continue with Step 1.
+   c. Log: `Resuming ws-dev session [session_id], current step: [current_step]`
+   d. Continue from `current_step`, skipping `completed_steps`
 3. If found and status is `active` or `paused` **and `group_id` is non-null**:
    a. Read the file completely — this is a group recovery after compaction or interruption
-   b. Log: `Resuming ws-dev group session [session_id], group: [group_id]`
-   c. Read `task_results` to determine which tasks in the group have already completed. A task is considered complete if it has an entry in `task_results` with `status: "success"` or `status: "partial"`.
-   d. Identify the first task in `group.tasks` (in order) that does not have a completed entry in `task_results`
-   e. Log: `Group recovery: [N] of [total] tasks complete. Resuming from task: [title]`
-   f. Resume group execution from that task. Completed tasks are not re-executed — their `task_results` entries are carried forward unchanged.
-   g. The shared documentation from `shared_context.docs_to_load` must be re-loaded — it is not persisted in the session file. Log: `Re-loading shared context documentation for group recovery`
+   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version`).
+      - If `plugin_version` is missing or does not match: **do not attempt recovery.** Log: `Session version mismatch (session: v[session_version or "unknown"], current: v[current_version]). Cannot recover — initializing fresh session.` Initialize a new session file and continue with Step 1.
+   c. Log: `Resuming ws-dev group session [session_id], group: [group_id]`
+   d. Read `task_results` to determine which tasks in the group have already completed. A task is considered complete if it has an entry in `task_results` with `status: "success"` or `status: "partial"`.
+   e. Identify the first task in `group.tasks` (in order) that does not have a completed entry in `task_results`
+   f. Log: `Group recovery: [N] of [total] tasks complete. Resuming from task: [title]`
+   g. Resume group execution from that task. Completed tasks are not re-executed — their `task_results` entries are carried forward unchanged.
+   h. The shared documentation from `shared_context.docs_to_load` must be re-loaded — it is not persisted in the session file. Log: `Re-loading shared context documentation for group recovery`
 4. If not found or status is `complete`:
    a. Initialize a new session file (see Session File Schema below)
    b. Continue with Step 1
@@ -564,7 +568,8 @@ Return to ws-orchestrator:
 ```json
 {
   "skill": "ws-dev",
-  "version": "2.0.0",
+  "version": "2.1.0",
+  "plugin_version": "2.1.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",

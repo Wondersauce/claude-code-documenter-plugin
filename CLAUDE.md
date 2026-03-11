@@ -61,8 +61,16 @@ Every skill maintains state in `.ws-session/[skill-name].json`. State files:
 - Enable recovery after context compaction, interruption, or restart
 - Are never deleted by the creating skill (orchestrator manages archival)
 - Must be valid JSON at all times
+- Include `plugin_version` to detect version mismatches on recovery
 
 Session schemas are defined in the "Session File Schema" section of each SKILL.md.
+
+### Session Versioning
+
+Every session file includes a `plugin_version` field set to the current version from `.claude-plugin/plugin.json` at session creation time. On recovery (Step 0), each skill compares the session's `plugin_version` against the running plugin version:
+
+- **Orchestrator:** Presents the user with a choice — attempt recovery (with explicit field-by-field validation) or dump the session and start fresh. Recovery will fail and report exactly which fields are missing if the schema has changed.
+- **Sub-skills (planner, dev, verifier):** Do not attempt recovery on version mismatch — initialize a fresh session. Sub-skill sessions are short-lived and re-creatable; silent recovery with missing data risks producing incorrect output.
 
 ## Key Conventions
 
@@ -92,8 +100,10 @@ ws-codebase-documenter generates all documentation types in a single context. Th
 ### No Offline/Local Model Support
 This plugin requires Claude-level reasoning to follow 500-800 line prescriptive specifications with JSON state management. Current open-weights models cannot reliably execute these workflows. This may change as local models improve.
 
-### No Cost Tracking
-There is no mechanism to convert token usage to dollar costs. Users may be on subscription plans, API billing, or hybrid setups — too many variables for accurate conversion. Token counts per session could be tracked as informational metadata.
+### Token Tracking (Not Cost Tracking)
+Token usage is tracked per skill invocation and presented in the session completion summary. The orchestrator records tokens for each Task() call broken down by skill (planner, dev, verifier, documenter) and by task. Retry iterations accumulate into the same task entry.
+
+There is no mechanism to convert token usage to dollar costs. Users may be on subscription plans, API billing, or hybrid setups — too many variables for accurate conversion. Token counts are informational metadata only.
 
 ## Modifying Skills
 
@@ -106,6 +116,6 @@ When editing SKILL.md files:
 
 ## Version History
 
-- **v2.1.0** — Current. Fullstack orchestration, task grouping, design quality layer.
+- **v2.1.0** — Current. Fullstack orchestration, task grouping, design quality layer, session versioning, token tracking.
 - **v2.0.0** — Lifecycle restructure, dev sub-skill upgrades, per-task verification loop.
 - **v1.0.0** — Initial release with linear plan-build-verify cycle.

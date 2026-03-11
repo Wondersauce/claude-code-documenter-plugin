@@ -51,8 +51,10 @@ Before doing anything else:
 1. Check for `.ws-session/verifier.json`
 2. If found and status is `active` or `paused`:
    a. Read the file completely
-   b. Log: `Resuming ws-verifier session [session_id], current step: [current_step]`
-   c. Continue from `current_step`, skipping `completed_steps`
+   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version`).
+      - If `plugin_version` is missing or does not match: **do not attempt recovery.** Log: `Session version mismatch (session: v[session_version or "unknown"], current: v[current_version]). Cannot recover — initializing fresh session.` Initialize a new session file and continue with Step 1.
+   c. Log: `Resuming ws-verifier session [session_id], current step: [current_step]`
+   d. Continue from `current_step`, skipping `completed_steps`
 3. If not found or status is `complete`:
    a. Initialize a new session file (see Session File Schema below)
    b. Continue with Step 1
@@ -447,7 +449,8 @@ The orchestrator tracks which task/group each verification call belongs to. The 
 ```json
 {
   "skill": "ws-verifier",
-  "version": "2.0.0",
+  "version": "2.1.0",
+  "plugin_version": "2.1.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",
