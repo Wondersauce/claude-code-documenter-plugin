@@ -9,8 +9,8 @@
 ```json
 {
   "skill": "ws-orchestrator",
-  "version": "2.1.0",
-  "plugin_version": "2.1.0",
+  "version": "2.2.0",
+  "plugin_version": "2.2.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",
@@ -19,7 +19,7 @@
   "current_step": "step identifier",
   "completed_steps": [],
   "docs_bootstrapped": "true | false | deferred",
-  "boot_block_installed": false,
+  "hooks_installed": true,
   "pending_task": "user's task description",
   "task_type": "feature | bugfix | refactor | documentation | infrastructure",
   "task_area": "frontend | backend | fullstack | devops",
@@ -80,6 +80,12 @@ When the verifier sends a task back to ws-dev for iteration, the dev and verifie
 - `verification_findings` — now per-task, transient between build/verify calls
 - `plan_conflicts` — handled inline in per-task loop
 - `completed_groups` — groups still work but merge into per-task loop via shared branches
+
+**Fields added in v2.2.0:**
+- `hooks_installed` — whether hooks have been installed in `.claude/settings.json`
+
+**Fields removed in v2.2.0:**
+- `boot_block_installed` — replaced by `hooks_installed`. Boot block enforcement moved to SessionStart and UserPromptSubmit hooks.
 
 **Fields added in v2.1.0:**
 - `plugin_version` — the plugin version that created this session (read from `.claude-plugin/plugin.json`). Used by Step 0 to detect version mismatches on recovery.

@@ -167,13 +167,6 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
 
 ## Drift Detection
 
-If you find yourself about to:
-- Hardcode a secret, credential, or environment-specific value
-- Use `latest` tag for a production container image
-- Create environment-specific infrastructure without a shared base
-- Skip error handling in deployment scripts
-- Bypass the project's established CI/CD pipeline structure
-- Grant broader permissions than necessary
-- Make a non-idempotent infrastructure change
+**Hard enforcement via hooks:** PreToolUse hooks block writes to plugin skill files and hook scripts. Infrastructure and CI/CD file writes are allowed for ws-dev/devops.
 
-**STOP.** You have drifted from the DevOps conventions. Re-read the DevOps Conventions Layer above. If the playbook doesn't cover your situation, check the Smart Defaults table. If neither applies, return `status: "blocked"` with the decision needed — do not invent patterns.
+**Soft enforcement (self-check):** If you find yourself about to hardcode secrets, use `latest` tags, skip error handling, bypass CI/CD structure, grant excessive permissions, or make non-idempotent changes — **STOP.** Check the DevOps Conventions Layer, then Smart Defaults. If neither applies, return `status: "blocked"`.

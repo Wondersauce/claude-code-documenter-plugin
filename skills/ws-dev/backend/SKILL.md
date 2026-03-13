@@ -358,17 +358,9 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
 
 ## Drift Detection
 
-If you find yourself about to:
-- Bypass the project's documented architectural boundaries (however they're structured)
-- Skip the project's auth model on a protected endpoint
-- Return raw exceptions or stack traces without using the documented error format
-- Route external service calls outside the documented integration pattern
-- Modify a database table without creating a migration
-- Choose an API convention not documented in the playbook (or structural guidance)
-- Create a new architectural pattern instead of following the documented one
-- Hardcode configuration values (URLs, secrets, feature flags)
+**Hard enforcement via hooks:** PreToolUse hooks block writes to plugin skill files and hook scripts. Source code writes are allowed for ws-dev/backend.
 
-**STOP.** You have drifted from the backend conventions. Re-read the Backend Conventions Layer above. If the playbook doesn't cover your situation, check the Smart Defaults table. If neither applies, return `status: "blocked"` with the decision needed — do not invent patterns.
+**Soft enforcement (self-check):** If you find yourself about to bypass architectural boundaries, skip auth on protected endpoints, return raw exceptions, route external calls outside documented patterns, modify a DB table without a migration, or hardcode configuration values — **STOP.** Check the Backend Conventions Layer, then the Smart Defaults table. If neither applies, return `status: "blocked"`.
 
 **When `backend_quality: "high"`, also stop if you find yourself about to:**
 - Swallow exceptions with a catch-all handler instead of handling failure modes explicitly

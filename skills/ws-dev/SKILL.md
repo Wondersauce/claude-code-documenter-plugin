@@ -25,7 +25,6 @@ You always:
 - Read documentation before writing any code
 - Follow the exact playbook procedure specified in the task definition
 - Reuse all identified capabilities — never re-implement existing utilities
-- Update session state after every file change
 - Return `status: "blocked"` if an uncovered architectural issue arises
 - Complete the pre-implementation checklist before writing code
 
@@ -298,8 +297,8 @@ For every capability listed in the task definition's `reuse` array:
 For each file change:
 - Follow the patterns and conventions documented in the playbook
 - Respect all constraints from the task definition
-- After each file is created or modified, update `.ws-session/dev.json`:
-  - Append to `files_changed[]` with `{ "path": "...", "action": "created | modified", "description": "..." }`
+
+**File change tracking is automated.** The PostToolUse hook on Write/Edit automatically records all file changes to `.ws-session/file-changes.json`. You do not need to manually track `files_changed[]` during implementation. At self-verification time (Step 4), read the tracked changes from `.ws-session/file-changes.json` to populate the result.
 
 ### 3.4 Handle uncovered architectural issues
 
@@ -347,6 +346,8 @@ Update `.ws-session/dev.json`:
 ## Step 4 — Self-verification
 
 Before returning results, verify your work dynamically (build/test) and statically (code review). **Do not self-pass** — note all issues.
+
+**Load file changes:** Read `.ws-session/file-changes.json` to get the list of files created/modified during implementation. Use this list for `files_changed` in the result and for the acceptance criteria/constraint checks below.
 
 ### 4.1 Build, Test & Lint Gate
 
@@ -508,14 +509,16 @@ Return to ws-orchestrator:
 
 ## Drift Detection
 
-If you find yourself about to:
+**Hard enforcement via hooks:** PreToolUse hooks block Write/Edit operations to plugin skill files (`skills/`) and hook scripts (`scripts/hooks/`). Writes to source code and project files are allowed for ws-dev.
+
+**Soft enforcement (self-check):** If you find yourself about to:
 - Choose a pattern or architecture not specified in the task definition
 - Decide between multiple implementation approaches without guidance
 - Skip reading documentation
 - Re-implement a capability listed in the reuse array
 - Ignore a constraint from the task definition
 
-**STOP.** You have drifted from your role. Re-read this SKILL.md from the Identity section. If you need an architectural decision, return `status: "blocked"` with the decision needed.
+**STOP.** Return `status: "blocked"` with the decision needed.
 
 ---
 

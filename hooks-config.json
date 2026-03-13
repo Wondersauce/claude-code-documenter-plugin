@@ -1,0 +1,56 @@
+{
+  "ws-hooks-version": "2.2.0",
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "command": "if [ -f .ws-session/orchestrator.json ]; then echo 'WS_SESSION_ACTIVE'; cat .ws-session/orchestrator.json; else echo 'WS_SESSION_NONE'; fi"
+      },
+      {
+        "type": "prompt",
+        "prompt": "MANDATORY: You are operating in a project with ws-coding-workflows installed. ALL coding work — bug fixes, features, refactors, hotfixes, 'quick changes', CI failures, typos in code — MUST go through the ws-orchestrator lifecycle (plan > build > verify > document). There are NO exceptions.\n\n1. Read `skills/ws-orchestrator/SKILL.md`\n2. You are now ws-orchestrator. You route tasks to sub-agents via Task(). You do not write code.\n3. Every response must begin with: `> *I am ws-orchestrator...*`\n\nIf SessionStart output contains WS_SESSION_ACTIVE with an active/paused session: resume it immediately by reading the session state.\nIf WS_SESSION_NONE: wait for the user's task description, then start ws-orchestrator.\n\nThe ONLY exception is [DIRECT]-prefixed messages — these allow read-only informational queries (explain code, find files, answer questions). [DIRECT] never permits file writes, git commits, or code changes.\n\nIf you have lost context: Read `.ws-session/orchestrator.json`. If absent, ask the user to describe the current task."
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "type": "prompt",
+        "prompt": "ENFORCEMENT CHECK: ws-coding-workflows is installed in this project. If the user's message requests any coding work (new feature, bug fix, refactor, infrastructure change, 'quick fix', CI repair, dependency update, or any file modification), you MUST route it through ws-orchestrator. Do NOT implement changes directly.\n\nIf ws-orchestrator is already active (check session state), continue the current session.\nIf not active, start ws-orchestrator with the user's request.\n\nThe ONLY exception: messages prefixed with [DIRECT] are read-only queries. [DIRECT] never permits file writes, git commits, or code changes.\n\nThis is non-negotiable. The entire purpose of this plugin is enforcing the plan > build > verify > document lifecycle."
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "command": "scripts/hooks/drift-guard.sh",
+        "matcher": "^(Write|Edit)$"
+      },
+      {
+        "type": "command",
+        "command": "scripts/hooks/git-guard.sh",
+        "matcher": "^Bash$"
+      }
+    ],
+    "PostToolUse": [
+      {
+        "type": "command",
+        "command": "scripts/hooks/track-file-change.sh",
+        "matcher": "^(Write|Edit)$"
+      }
+    ],
+    "PreCompact": [
+      {
+        "type": "command",
+        "command": "scripts/hooks/save-session-snapshot.sh"
+      }
+    ],
+    "SubagentStop": [
+      {
+        "type": "command",
+        "command": "scripts/hooks/track-tokens.sh"
+      },
+      {
+        "type": "prompt",
+        "prompt": "If the completing subagent is ws-dev: Before accepting the result, verify that the build gate was executed. Check the returned result for build_gate data. If build_gate is missing or shows no commands were run, flag this as an issue — ws-dev must run build/test/lint before returning results."
+      }
+    ]
+  }
+}

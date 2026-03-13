@@ -122,19 +122,26 @@ Install it from the ws-coding-workflows plugin before continuing.
 ```
 **Do not proceed. Do not attempt to do the missing skill's work inline.**
 
-### 1.5 Check CLAUDE.md boot block
+### 1.5 Install hooks
 
-Check if the project's `CLAUDE.md` file contains the ws-orchestrator boot block (identified by the marker `## WS AI Master Plan — Session Boot`).
+Read `.claude/settings.json` (or `.claude/settings.local.json`). Check for a `ws-hooks-version` field in the hooks configuration.
 
-- If present: set `boot_block_installed = true`
-- If absent: set `boot_block_installed = false`
+1. **If `ws-hooks-version` is missing or outdated** (less than current plugin version):
+   a. Read `hooks-config.json` from the plugin root directory
+   b. Merge hook definitions into the existing settings file (preserve any user-defined hooks — append ws hooks to each event's array, do not replace)
+   c. Write the updated settings file
+   d. Log: `Installed ws-coding-workflows hooks v[version]`
 
-### 1.5.1 Upgrade old boot block
+2. **If `ws-hooks-version` is current:** skip — hooks already installed.
 
-If `boot_block_installed = true`: check if `CLAUDE.md` also contains the string `### Orchestrator Activation`.
-
-- If yes: this is an old-format boot block. Run the Boot Block Update procedure (see Boot Block Injection section).
-- If no: boot block is current, no action needed.
+3. **Migration — remove legacy CLAUDE.md boot block:**
+   If `CLAUDE.md` exists and contains the marker `## WS AI Master Plan — Session Boot`:
+   a. Read `CLAUDE.md`
+   b. Locate the boot block — starts at `## WS AI Master Plan — Session Boot`, ends at the next `##` heading or EOF
+   c. Remove the boot block section entirely
+   d. If `CLAUDE.md` is now empty (only whitespace remains): delete the file
+   e. Otherwise: write the updated `CLAUDE.md` (preserving all other content)
+   f. Log: `Migrated boot block from CLAUDE.md to SessionStart hook`
 
 ### 1.6 Log activation
 
@@ -148,32 +155,15 @@ Write the initial session file to `.ws-session/orchestrator.json`.
 
 ## Step 2 — Receive Task
 
-### 2.1 Accept task and handle first-run setup
+### 2.1 Accept task
 
 If the user invoked `/ws-orchestrator` with an argument:
 - Task description = the argument
-- If `boot_block_installed = false`:
-    After environment validation, offer boot block installation:
-    ```
-    ws-orchestrator is ready. Install the CLAUDE.md boot block to
-    auto-activate on future sessions? [Y/n]
-    ```
-    (Non-blocking — proceed regardless of answer)
 
 If no argument was provided:
-- If `boot_block_installed = false`:
-    ```
-    Welcome to ws-orchestrator. This tool enforces a
-    plan→build→verify→document lifecycle for all development work.
+- Prompt: `What would you like to build?`
 
-    1. Install boot block + give me a task
-    2. Just give me a task (no auto-activation)
-    ```
-    Execute boot block injection if option 1.
-- If `boot_block_installed = true`:
-    ```
-    What would you like to build?
-    ```
+**Note:** Hook-based enforcement (SessionStart + UserPromptSubmit) handles auto-activation. No manual boot block installation is needed.
 
 ### 2.2 Classify task
 
@@ -380,23 +370,7 @@ Task([sub-skill from 4.1.2]) with:
 
 #### 4.1.4 Evaluate dev result
 
-After every `Task()` call (ws-planner, ws-dev, ws-verifier, ws-codebase-documenter), record the token usage reported by the task. Accumulate totals in the session state under `token_usage`:
-
-```json
-{
-  "token_usage": {
-    "by_skill": {
-      "ws-planner": { "calls": 1, "input_tokens": 0, "output_tokens": 0 },
-      "ws-dev": { "calls": 2, "input_tokens": 0, "output_tokens": 0 },
-      "ws-verifier": { "calls": 2, "input_tokens": 0, "output_tokens": 0 },
-      "ws-codebase-documenter": { "calls": 3, "input_tokens": 0, "output_tokens": 0 }
-    },
-    "total": { "calls": 8, "input_tokens": 0, "output_tokens": 0 }
-  }
-}
-```
-
-Update `token_usage` after every `Task()` return — not just at session completion. This survives context compaction.
+**Token tracking:** Token usage is automatically accumulated by the SubagentStop hook into `.ws-session/token-log.json`. At session completion (Step 5.4), read the token log to produce the usage summary. If the token log is missing or empty, record `0` and note in `errors[]`.
 
 The dev agent returns:
 
@@ -646,27 +620,21 @@ Rules for `[DIRECT]` mode:
 
 ---
 
-## Boot Block Injection
-
-When triggered from Step 2.1 (or on user request), inject the ws-orchestrator auto-activation block into the project's `CLAUDE.md`. **Load `references/boot-block.md` for the complete injection procedure**, idempotency rules, and old-format migration.
-
----
-
 ## Drift Detection
 
-If you find yourself about to:
+**Hard enforcement via hooks:** PreToolUse hooks block Write/Edit operations that violate skill boundaries. The orchestrator is only allowed to write to `.ws-session/`, `.gitignore`, `.claude/`, and `CLAUDE.md`. Attempts to write source code or documentation content will be blocked automatically.
+
+**Soft enforcement (self-check):** If you find yourself about to:
 - Read a source code file
-- Write or edit code
 - Make an implementation decision
 - Generate a diff
 - Debug, troubleshoot, or investigate an error
-- Read logs, stack traces, or error output to diagnose a problem
-- Create todo lists, action plans, or step-by-step checklists for implementation work
+- Create todo lists or step-by-step checklists for implementation work
 
-**STOP.** You have drifted from your role. Re-read this SKILL.md from the Identity section. Route the work to the appropriate sub-skill via `Task()`.
+**STOP.** Route the work to the appropriate sub-skill via `Task()`.
 
-**Debugging and error investigation are implementation work.** When a user reports an error, do not investigate it yourself. Classify it as a `bugfix` task (Step 2.2) and route it through the full lifecycle: ws-planner diagnoses and plans the fix, ws-dev implements it, ws-verifier validates it.
+**Debugging and error investigation are implementation work.** Classify errors as `bugfix` tasks and route through the full lifecycle.
 
-**Todo lists are not a substitute for Task() delegation.** The orchestrator dispatches work via `Task()` calls to sub-skills — it does not plan implementation steps itself. If you catch yourself writing a numbered list of code changes, file edits, or implementation actions, replace it with the appropriate `Task()` call. Planning belongs to ws-planner; implementation belongs to ws-dev.
+**Todo lists are not a substitute for Task() delegation.** If you catch yourself writing a numbered list of code changes, replace it with the appropriate `Task()` call.
 
-If implementation-level content (code snippets, file contents, technical implementation details, error output, stack traces) appears in the main conversation context — whether from a user paste or an unexpected sub-skill result — proactively suggest delegating to the appropriate sub-skill via `Task()` rather than engaging with the content directly.
+If implementation-level content appears in context, suggest delegating to the appropriate sub-skill rather than engaging directly.

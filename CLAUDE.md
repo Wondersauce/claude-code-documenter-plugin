@@ -2,9 +2,9 @@
 
 ## What This Is
 
-A Claude Code plugin (v2.1.0) that enforces a deterministic development lifecycle: **plan → build → verify → document**. Every coding session follows the same process regardless of task type, preventing architectural drift, code duplication, and styling entropy as projects grow.
+A Claude Code plugin (v2.2.0) that enforces a deterministic development lifecycle: **plan → build → verify → document**. Every coding session follows the same process regardless of task type, preventing architectural drift, code duplication, and styling entropy as projects grow.
 
-The plugin is entirely Markdown-based — no compiled code, no runtime dependencies. Skills are executable specifications that Claude Code interprets and follows.
+The plugin uses Markdown-based skills (executable specifications) backed by Claude Code hooks for enforcement. No compiled code, no runtime dependencies.
 
 ## Repository Structure
 
@@ -13,13 +13,25 @@ The plugin is entirely Markdown-based — no compiled code, no runtime dependenc
 ├── plugin.json              # Plugin manifest (name, version, author)
 └── marketplace.json         # Marketplace metadata
 
+scripts/
+└── hooks/
+    ├── lib/session-utils.sh       # Shared session detection utilities
+    ├── drift-guard.sh             # PreToolUse — enforce skill write boundaries
+    ├── track-file-change.sh       # PostToolUse — auto-track file changes for ws-dev
+    ├── git-guard.sh               # PreToolUse — enforce git conventions
+    ├── save-session-snapshot.sh   # PreCompact — snapshot session state before compaction
+    └── track-tokens.sh            # SubagentStop — auto-accumulate token usage
+
+hooks-config.json                  # Hook configuration template (installed to .claude/settings.json)
+
 skills/
 ├── ws-orchestrator/SKILL.md       # Lifecycle manager — routes work, never writes code
 ├── ws-planner/SKILL.md            # Task decomposition — produces structured task definitions
 ├── ws-dev/
 │   ├── SKILL.md                   # Implementation parent — routes by area, handles fullstack
 │   ├── frontend/SKILL.md          # Frontend conventions, design quality, a11y rules
-│   └── backend/SKILL.md           # Backend conventions, production hardening
+│   ├── backend/SKILL.md           # Backend conventions, production hardening
+│   └── devops/SKILL.md            # CI/CD, IaC, containers, deployment conventions
 ├── ws-verifier/SKILL.md           # Independent verification — reads and judges, never fixes
 └── ws-codebase-documenter/
     ├── SKILL.md                   # Documentation generator (bootstrap/incremental/regenerate)
@@ -72,13 +84,30 @@ Every session file includes a `plugin_version` field set to the current version 
 - **Orchestrator:** Presents the user with a choice — attempt recovery (with explicit field-by-field validation) or dump the session and start fresh. Recovery will fail and report exactly which fields are missing if the schema has changed.
 - **Sub-skills (planner, dev, verifier):** Do not attempt recovery on version mismatch — initialize a fresh session. Sub-skill sessions are short-lived and re-creatable; silent recovery with missing data risks producing incorrect output.
 
+## Hook Architecture
+
+Hooks provide hard enforcement of plugin rules via Claude Code's hooks API. They are installed automatically by the orchestrator (Step 1.5) into `.claude/settings.json`.
+
+| Event | Hook | Purpose |
+|-------|------|---------|
+| **SessionStart** | command + prompt | Detect active sessions, enforce orchestrator activation on every conversation |
+| **UserPromptSubmit** | prompt | Enforce orchestrator routing for all coding work (second enforcement layer) |
+| **PreToolUse** (Write/Edit) | `drift-guard.sh` | Block file writes that violate skill boundaries |
+| **PreToolUse** (Bash) | `git-guard.sh` | Block force pushes, enforce merge conventions |
+| **PostToolUse** (Write/Edit) | `track-file-change.sh` | Auto-track file changes for ws-dev |
+| **PreCompact** | `save-session-snapshot.sh` | Snapshot session state before context compaction |
+| **SubagentStop** | `track-tokens.sh` + prompt | Auto-accumulate tokens, verify build gate execution |
+
+**Enforcement is mandatory.** The orchestrator lifecycle is not optional — all coding work routes through plan → build → verify → document. The only bypass is `[DIRECT]`-prefixed messages for read-only queries.
+
 ## Key Conventions
 
-- **Skills never exceed their boundaries.** The orchestrator doesn't write code. The dev agent doesn't make architectural decisions. The verifier doesn't fix issues.
+- **Skills never exceed their boundaries.** Enforced by PreToolUse hooks — the verifier physically cannot write source code, the planner can only write its session file, etc.
 - **Documentation drives implementation.** ws-dev reads playbook.md and capability-map.md before writing any code. If these docs don't exist, the project must bootstrap first.
 - **Verification is independent.** ws-verifier loads changed files and judges against task definitions — it has no knowledge of ws-dev's reasoning.
 - **Iteration is bounded.** Failed verification triggers re-dispatch to ws-dev (max 3 iterations). After 3 failures, the user decides.
 - **State recovery is mechanical, not speculative.** Step 0 in every skill reads the session file and resumes from the last completed step. No guessing.
+- **File changes are hook-tracked.** ws-dev no longer manually tracks `files_changed[]` — the PostToolUse hook writes to `.ws-session/file-changes.json` automatically.
 
 ## Testing
 
@@ -101,9 +130,7 @@ ws-codebase-documenter generates all documentation types in a single context. Th
 This plugin requires Claude-level reasoning to follow 500-800 line prescriptive specifications with JSON state management. Current open-weights models cannot reliably execute these workflows. This may change as local models improve.
 
 ### Token Tracking (Not Cost Tracking)
-Token usage is tracked per skill invocation and presented in the session completion summary. The orchestrator records tokens for each Task() call broken down by skill (planner, dev, verifier, documenter) and by task. Retry iterations accumulate into the same task entry.
-
-There is no mechanism to convert token usage to dollar costs. Users may be on subscription plans, API billing, or hybrid setups — too many variables for accurate conversion. Token counts are informational metadata only.
+Token usage is automatically tracked by the SubagentStop hook, which accumulates usage into `.ws-session/token-log.json`. The orchestrator reads the log at session completion to present the summary. There is no mechanism to convert tokens to dollar costs — token counts are informational metadata only.
 
 ## Modifying Skills
 
@@ -114,8 +141,19 @@ When editing SKILL.md files:
 - Update version fields in session schemas when making breaking changes to state format
 - Test changes against a controlled project before merging
 
+## Modifying Hooks
+
+When editing hook scripts in `scripts/hooks/`:
+- Maintain compatibility with the `session-utils.sh` shared library
+- Hook scripts must be executable (`chmod +x`)
+- PreToolUse hooks exit 0 to allow, exit 2 to block (with reason on stdout)
+- PostToolUse hooks are fire-and-forget — they cannot block operations
+- Update `hooks-config.json` version when adding/removing/modifying hooks
+- Test hooks locally before committing — a broken hook can block all file operations
+
 ## Version History
 
-- **v2.1.0** — Current. Fullstack orchestration, task grouping, design quality layer, session versioning, token tracking.
+- **v2.2.0** — Current. Hook-based enforcement (SessionStart, UserPromptSubmit, PreToolUse drift guards, PostToolUse file tracking, PreCompact snapshots, SubagentStop token tracking and build gate). Removes CLAUDE.md boot block in favor of hooks. Automated migration from boot block to hooks.
+- **v2.1.0** — Fullstack orchestration, task grouping, design quality layer, session versioning, token tracking.
 - **v2.0.0** — Lifecycle restructure, dev sub-skill upgrades, per-task verification loop.
 - **v1.0.0** — Initial release with linear plan-build-verify cycle.

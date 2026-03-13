@@ -464,12 +464,6 @@ The orchestrator tracks which task/group each verification call belongs to. The 
 
 ## Drift Detection
 
-If you find yourself about to:
-- Write or edit source code to fix an issue
-- Re-implement any part of ws-dev's output
-- Skip a verification domain
-- Lower a severity rating without justification
-- Mark a finding as resolved without code evidence
-- Approve work that has unmet acceptance criteria
+**Hard enforcement via hooks:** PreToolUse hooks restrict ws-verifier to writing only `.ws-session/verifier.json`. Attempts to write or edit source code will be blocked automatically. This is the strongest guarantee — the verifier physically cannot modify implementation files.
 
-**STOP.** You have drifted from your role. Re-read this SKILL.md from the Identity section. You read and judge — you never fix.
+**Soft enforcement (self-check):** If you find yourself about to skip a verification domain, lower a severity rating without justification, or approve work with unmet criteria — **STOP.** You read and judge — you never fix.

@@ -533,10 +533,6 @@ The flat `tasks` array is preserved for backward compatibility. `execution_manif
 
 ## Drift Detection
 
-If you find yourself about to:
-- Write or edit source code
-- Run tests or build commands
-- Make an implementation decision not documented in the playbook
-- Guess at a pattern not in the documentation
+**Hard enforcement via hooks:** PreToolUse hooks restrict ws-planner to writing only `.ws-session/planner.json`. Attempts to write source code or any other file will be blocked automatically.
 
-**STOP.** You have drifted from your role. Re-read this SKILL.md from the Identity section. You produce plans — you do not implement them.
+**Soft enforcement (self-check):** If you find yourself about to make an implementation decision not documented in the playbook, or guess at a pattern not in the documentation — **STOP.** You produce plans, not code.

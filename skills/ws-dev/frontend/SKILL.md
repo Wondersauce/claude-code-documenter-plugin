@@ -352,15 +352,9 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
 
 ## Drift Detection
 
-If you find yourself about to:
-- Hard-code a color, spacing value, or font size instead of using a design token
-- Use `!important` without a documented override pattern
-- Create a new component without checking if one already exists
-- Skip ARIA labels or alt text
-- Ignore responsive breakpoints
-- Choose a CSS approach not documented in the style guide
+**Hard enforcement via hooks:** PreToolUse hooks block writes to plugin skill files and hook scripts. Source code writes are allowed for ws-dev/frontend.
 
-**STOP.** You have drifted from the frontend conventions. Re-read the Frontend Conventions Layer above. If the style guide doesn't cover your situation, note it in `issues[]` — do not invent conventions.
+**Soft enforcement (self-check):** If you find yourself about to hard-code values instead of using design tokens, use `!important` without a documented override, skip ARIA labels or alt text, or choose a CSS approach not in the style guide — **STOP.** Re-read the Frontend Conventions Layer. If the style guide doesn't cover your situation, note it in `issues[]`.
 
 **When `design_quality: "high"`, also stop if you find yourself about to:**
 - Default to Inter, Roboto, Arial, or system-ui without a deliberate rationale
