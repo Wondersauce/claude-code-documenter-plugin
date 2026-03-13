@@ -125,11 +125,12 @@ Update `.ws-session/planner.json`:
 ### 2.1 Accept task input
 
 The task arrives from ws-orchestrator with:
-- `task_description`: the user's original request
+- `task_description`: the user's original request (or enriched description from ws-debugger for bugfix tasks)
 - `task_type`: `feature` | `bugfix` | `refactor` | `documentation` | `infrastructure`
 - `task_area`: `frontend` | `backend` | `fullstack` | `devops`
 - `project`: project name
 - `docs_bootstrapped`: `true` | `"deferred"` — when `"deferred"`, plan without playbook/capability-map references
+- `debugger_context`: (optional) fix object from ws-debugger — present for bugfix tasks that went through investigation. Contains `affected_files`, `acceptance_criteria`, `constraints`, `test_recommendations`, `root_cause_summary`, and `estimated_complexity`. When present, use this as authoritative input — the debugger has already read the source code and identified the root cause. Do not re-investigate the bug; decompose the fix into tasks.
 
 ### 2.2 Identify relevant patterns
 

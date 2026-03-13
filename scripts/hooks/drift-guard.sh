@@ -95,6 +95,19 @@ case "$ACTIVE_SKILL" in
     esac
     ;;
 
+  debugger)
+    # Debugger can only write its own session file — it reads and diagnoses, never fixes
+    case "$FILE_PATH" in
+      .ws-session/debugger.json)
+        exit 0
+        ;;
+      *)
+        echo "BLOCKED: ws-debugger cannot write files. It investigates and diagnoses only."
+        exit 2
+        ;;
+    esac
+    ;;
+
   documenter)
     # Documenter can write: documentation files, session files, CLAUDE.md, config
     case "$FILE_PATH" in

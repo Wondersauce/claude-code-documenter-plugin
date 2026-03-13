@@ -117,6 +117,7 @@ Check that the following skills are installed and available. For each missing sk
 | Skill | Required For |
 |-------|-------------|
 | `ws-planner` | Step 3 — Planning |
+| `ws-debugger` | Step 2.5 — Bug investigation (required for `bugfix` tasks) |
 | `ws-dev` | Step 4 — Building |
 | `ws-verifier` | Step 4 — Per-task verification |
 | `ws-codebase-documenter` | Step 1.2 bootstrap, Step 4 per-task documentation, Step 5 final documentation pass |
@@ -191,20 +192,148 @@ Update `.ws-session/orchestrator.json`:
 
 ---
 
+## Step 2.5 — Bug Investigation (bugfix only)
+
+**Skip this step entirely if `task_type` is not `bugfix`.** Proceed directly to Step 3.
+
+When the user reports a bug, the report is often vague — symptoms without root cause, error messages without context. The debugger investigates the codebase and returns an enriched task description with root cause analysis that the planner can decompose into precise fix tasks.
+
+### 2.5.1 Invoke ws-debugger
+
+```
+Task(ws-debugger) with:
+  - bug_report: [user's task description / bug report]
+  - task_area: [classified area]
+  - project: [project name]
+```
+
+### 2.5.2 Evaluate debugger result
+
+The debugger returns:
+
+```json
+{
+  "skill": "ws-debugger",
+  "status": "success | partial | failed",
+  "summary": "...",
+  "outputs": {
+    "root_cause": { ... },
+    "fix": {
+      "title": "...",
+      "root_cause_summary": "...",
+      "fix_description": "...",
+      "affected_files": [],
+      "acceptance_criteria": [],
+      "constraints": [],
+      "test_recommendations": [],
+      "risk_assessment": {},
+      "estimated_complexity": "..."
+    },
+    "secondary_issues": [],
+    "hypotheses": [],
+    "files_investigated": []
+  },
+  "issues": [],
+  "next_action": "..."
+}
+```
+
+**If `status = "success"`:**
+- Present the diagnosis to the user:
+  ```
+  ## Bug Investigation
+
+  **Root Cause:** [root_cause.description]
+  **Confidence:** [root_cause.confidence]
+  **Location:** [root_cause.file]:[root_cause.line]
+
+  **Proposed Fix:** [fix.title]
+  [fix.root_cause_summary]
+
+  **Affected Files:** [count]
+  **Estimated Complexity:** [fix.estimated_complexity]
+  **Risk:** [fix.risk_assessment.blast_radius] — [fix.risk_assessment.description]
+
+  Proceed with this fix? [Y / provide more context / abort]
+  ```
+- If user approves: enrich `pending_task` with the debugger's fix description and continue to Step 3. The planner receives:
+  - `task_description`: the debugger's `fix.fix_description` (replaces the original vague bug report)
+  - `debugger_context`: the full `fix` object (affected files, acceptance criteria, constraints, test recommendations)
+- If user provides more context: re-invoke `Task(ws-debugger)` with the additional context appended to `bug_report`
+- If user aborts: set session `status` to `"aborted"`, archive, **STOP**
+
+**If `status = "partial"`:**
+- Present the hypotheses to the user:
+  ```
+  ## Bug Investigation — Partial
+
+  The debugger found possible causes but could not confirm a root cause.
+
+  **Hypotheses:**
+  [list hypotheses with confidence levels]
+
+  Options:
+  1. Proceed with best-effort fix (highest confidence hypothesis)
+  2. Provide more context (logs, reproduction steps, environment details)
+  3. Abort
+  ```
+- If proceed: use the highest-confidence hypothesis to construct the fix description. Continue to Step 3.
+- If more context: re-invoke `Task(ws-debugger)` with additional context
+- If abort: set session `status` to `"aborted"`, archive, **STOP**
+
+**If `status = "failed"`:**
+- Present the investigation summary to the user:
+  ```
+  ## Bug Investigation — Failed
+
+  The debugger could not identify the root cause.
+  [summary]
+
+  [issues]
+
+  Options:
+  1. Provide more information and retry
+  2. Skip debugging and plan from the original bug report
+  3. Abort
+  ```
+- If retry: re-invoke `Task(ws-debugger)` with additional context
+- If skip: continue to Step 3 with the original `pending_task` (planner works from the raw bug report)
+- If abort: set session `status` to `"aborted"`, archive, **STOP**
+
+### 2.5.3 Handle secondary issues
+
+If the debugger returned `secondary_issues` with `recommendation: "fix now"`:
+- Append these to the enriched task description so the planner includes them in the plan
+
+If `recommendation: "fix later"`:
+- Present to user after session completion as follow-up work
+
+### 2.5.4 Update session state
+
+Update `.ws-session/orchestrator.json`:
+- Set `debugger_result` to the debugger's full result
+- Set `current_step` to `"3"`
+- If task was enriched: update `pending_task` with the enriched description
+
+---
+
 ## Step 3 — Plan
 
 ### 3.1 Invoke ws-planner
 
 ```
 Task(ws-planner) with:
-  - task_description: [user's task]
+  - task_description: [user's task (or enriched description from ws-debugger for bugfix tasks)]
   - task_type: [classified type]
   - task_area: [classified area]
   - project: [project name]
   - docs_bootstrapped: [true | "deferred"]
+  - debugger_context: [fix object from ws-debugger, if available — includes affected_files, acceptance_criteria, constraints, test_recommendations]
 ```
 
 When `docs_bootstrapped = "deferred"` (new/empty project), the planner operates without playbook or capability-map references and must produce more explicit structural guidance in each task definition — specifying conventions, file structure patterns, and implementation approaches directly in the task rather than referencing documentation.
+
+When `debugger_context` is present (bugfix tasks that went through ws-debugger), the planner should use the debugger's analysis — affected files, acceptance criteria, constraints, and test recommendations — as authoritative input rather than re-analyzing the bug from scratch. The debugger has already read the source code and identified the root cause.
 
 ### 3.2 Evaluate planner result
 
@@ -638,7 +767,7 @@ Rules for `[DIRECT]` mode:
 
 **STOP.** Route the work to the appropriate sub-skill via `Task()`.
 
-**Debugging and error investigation are implementation work.** Classify errors as `bugfix` tasks and route through the full lifecycle.
+**Debugging and error investigation are implementation work.** Classify errors as `bugfix` tasks and route through ws-debugger → ws-planner → ws-dev → ws-verifier.
 
 **Todo lists are not a substitute for Task() delegation.** If you catch yourself writing a numbered list of code changes, replace it with the appropriate `Task()` call.
 

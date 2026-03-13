@@ -26,6 +26,11 @@ hooks-config.json                  # Hook configuration template (installed to .
 
 skills/
 ├── ws-orchestrator/SKILL.md       # Lifecycle manager — routes work, never writes code
+├── ws-debugger/
+│   ├── SKILL.md                   # Bug investigation — reads code, identifies root cause, produces fix descriptions
+│   └── references/
+│       ├── session-schema.md      # Session file schema and error handling
+│       └── investigation-strategies.md  # Bug-type strategies, git forensics, web research, bounding rules
 ├── ws-planner/SKILL.md            # Task decomposition — produces structured task definitions
 ├── ws-dev/
 │   ├── SKILL.md                   # Implementation parent — routes by area, handles fullstack
@@ -56,6 +61,7 @@ There is no build system. This is a pure skill-based plugin:
 
 ```
 ws-orchestrator (entry point — never writes code)
+├── Task(ws-debugger)        → bug investigation, root cause analysis (bugfix only)
 ├── Task(ws-planner)         → structured task definitions
 ├── Task(ws-dev)             → implementation
 │   ├── ws-dev/frontend      → UI, styling, accessibility
@@ -104,6 +110,7 @@ Hooks provide hard enforcement of plugin rules via Claude Code's hooks API. They
 ## Key Conventions
 
 - **Skills never exceed their boundaries.** Enforced by PreToolUse hooks — the verifier physically cannot write source code, the planner can only write its session file, etc.
+- **Bugs go through investigation first.** When `task_type = bugfix`, the orchestrator dispatches to ws-debugger before planning. The debugger reads source code, identifies the root cause, and returns an enriched fix description that the planner decomposes into tasks.
 - **Documentation drives implementation.** ws-dev reads playbook.md and capability-map.md before writing any code. If these docs don't exist, the project must bootstrap first.
 - **Verification is independent.** ws-verifier loads changed files and judges against task definitions — it has no knowledge of ws-dev's reasoning.
 - **Iteration is bounded.** Failed verification triggers re-dispatch to ws-dev (max 3 iterations). After 3 failures, the user decides.

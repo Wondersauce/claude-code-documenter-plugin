@@ -23,6 +23,7 @@
   "pending_task": "user's task description",
   "task_type": "feature | bugfix | refactor | documentation | infrastructure",
   "task_area": "frontend | backend | fullstack | devops",
+  "debugger_result": null,
   "current_plan": [],
   "execution_manifest": {},
   "completed_tasks": [],
@@ -82,6 +83,9 @@ Token counts are informational metadata — never block or warn based on token c
 - `verification_findings` — now per-task, transient between build/verify calls
 - `plan_conflicts` — handled inline in per-task loop
 - `completed_groups` — groups still work but merge into per-task loop via shared branches
+
+**Fields added in v2.3.0:**
+- `debugger_result` — full result from ws-debugger investigation (null for non-bugfix tasks)
 
 **Fields added in v2.2.0:**
 - `hooks_installed` — whether hooks have been installed in `.claude/settings.json`
