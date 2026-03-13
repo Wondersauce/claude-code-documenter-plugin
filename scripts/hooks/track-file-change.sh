@@ -48,14 +48,8 @@ if [ ! -f "$CHANGES_FILE" ]; then
   echo '{"changes":[]}' > "$CHANGES_FILE"
 fi
 
-# Check if this file was already tracked (avoid duplicates for same file)
-if grep -q "\"path\":\"${FILE_PATH}\"" "$CHANGES_FILE" 2>/dev/null; then
-  # File already tracked — update timestamp (file was modified again)
-  # For simplicity, we don't update in place; the latest entry wins at read time
-  :
-fi
-
-# Append the change entry
+# Append the change entry (duplicates are acceptable — multiple edits to the same file
+# produce multiple entries; consumers deduplicate by path, keeping the latest timestamp)
 # Use a temp file for atomic write
 TEMP_FILE=$(mktemp)
 # Remove the trailing ]} and append new entry

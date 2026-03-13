@@ -59,7 +59,8 @@ ws-orchestrator (entry point — never writes code)
 ├── Task(ws-planner)         → structured task definitions
 ├── Task(ws-dev)             → implementation
 │   ├── ws-dev/frontend      → UI, styling, accessibility
-│   └── ws-dev/backend       → APIs, services, data models
+│   ├── ws-dev/backend       → APIs, services, data models
+│   └── ws-dev/devops        → CI/CD, IaC, containers, deployment
 ├── Task(ws-verifier)        → pass/partial/fail verdict
 └── Task(ws-codebase-documenter) → documentation updates
 ```

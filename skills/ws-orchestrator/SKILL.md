@@ -37,10 +37,10 @@ You only:
 Before doing anything else:
 
 1. Check for `.ws-session/orchestrator.json`
-2. If found and status is `active` or `paused`:
+2. If found and status is `active`, `paused`, `plan_approved`, or `build_complete`:
    a. Read the file completely
    b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version` field).
-      - If `plugin_version` is missing or versions do not match: log `Session version mismatch (v[session_version] → v[current_version]). Starting fresh.`, rename to `.ws-session/archive/[session_id]-stale.json`, initialize a new session, and continue with Step 1.
+      - If `plugin_version` is missing or versions do not match: log `Session version mismatch (v[session_version] → v[current_version]). Starting fresh.`, create `.ws-session/archive/` if needed, rename to `.ws-session/archive/[session_id]-stale.json`, initialize a new session, and continue with Step 1.
       - If versions match: proceed normally.
    c. Verify git branch state:
       - If `feature_branch` is set and exists: `git checkout [feature_branch]`
@@ -49,7 +49,7 @@ Before doing anything else:
         - If not exists but task not in `completed_tasks`: task branch was lost — will be recreated on re-dispatch
    d. Log: `Resuming ws-orchestrator session [session_id], step: [current_step], branch: [feature_branch or "none"]`
    e. Continue from `current_step`, skipping `completed_steps`
-3. If not found or status is `complete` or `aborted`:
+3. If not found or status is `complete`, `aborted`, or `failed`:
    a. Initialize a new session file (see Session File Schema below)
    b. Continue with Step 1
 
@@ -59,10 +59,16 @@ Before doing anything else:
 
 ### 1.1 Verify session directory
 
-Check if `.ws-session/` exists. If not, create it:
+Check if `.ws-session/` exists. If not, create it (including the archive subdirectory):
 
 ```bash
-mkdir -p .ws-session
+mkdir -p .ws-session/archive
+```
+
+Clear any stale hook state files from a previous session:
+
+```bash
+rm -f .ws-session/file-changes.json .ws-session/token-log.json .ws-session/active-task.json
 ```
 
 Check if `.gitignore` contains `.ws-session/`. If not, append:
@@ -133,6 +139,8 @@ Read `.claude/settings.json` (or `.claude/settings.local.json`). Check for a `ws
    d. Log: `Installed ws-coding-workflows hooks v[version]`
 
 2. **If `ws-hooks-version` is current:** skip — hooks already installed.
+
+Set `hooks_installed = true` in session state after successful installation or verification.
 
 3. **Migration — remove legacy CLAUDE.md boot block:**
    If `CLAUDE.md` exists and contains the marker `## WS AI Master Plan — Session Boot`:
@@ -440,7 +448,8 @@ The verifier now receives and verifies ONE task (or one group) at a time.
      ```
      Task([sub-skill from 4.1.2]) with:
        - mode: "iterate"
-       - task_definition: [task]
+       - task_definition: [task] (or group: [group object] for grouped tasks)
+       - project: [project name]
        - iteration_findings: [findings from verifier]
        - task_branch: [task_branch]
        - feature_branch: [feature_branch]
@@ -574,17 +583,13 @@ Update `.ws-session/orchestrator.json`:
 - [list from documenter result]
 
 ### Token Usage
-Orchestrator: [token_usage.orchestrator] tokens
-Planner: [token_usage.planner] tokens
-[For each entry in token_usage.tasks:]
-Task: [task_title]
-  Skill: dev — [skill_tokens.dev] tokens
-  Skill: verifier — [skill_tokens.verifier] tokens
-  Skill: documenter — [skill_tokens.documenter] tokens
-  Retries: [retries]
-Final Documenter: [token_usage.final_documenter] tokens
+[Read .ws-session/token-log.json and aggregate by skill:]
+Planner: [total planner tokens] tokens
+Dev: [total dev tokens] tokens
+Verifier: [total verifier tokens] tokens
+Documenter: [total documenter tokens] tokens
 
-Total Tokens: [token_usage.total]
+Total Tokens: [sum of all entries]
 ```
 
 **Note:** The feature branch is NOT auto-merged into the original branch. The user reviews it (or creates a PR). This is a deliberate safety choice — the orchestrator never pushes to remote or merges to the user's working branch.

@@ -96,7 +96,7 @@ ws-dev accepts either a single task definition or a group. Detect invocation typ
     "task_id": "...",
     "title": "...",
     "type": "feature | bugfix | refactor | documentation | infrastructure",
-    "area": "frontend | backend | fullstack",
+    "area": "frontend | backend | fullstack | devops",
     "description": "...",
     "acceptance_criteria": [],
     "constraints": [],

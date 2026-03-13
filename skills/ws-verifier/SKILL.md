@@ -51,8 +51,8 @@ When verifying a task that was re-implemented after a previous verification (ite
 1. Compare each current finding against the previous iteration's findings (by `domain`, `file`, and `description` similarity)
 2. If a finding from the previous iteration reappears at the same severity after ws-dev addressed it:
    - The verifier MUST either provide a **more specific recommended fix** (with exact code or pattern to use), OR
-   - Downgrade the finding to one severity level lower (HIGH → MEDIUM, MEDIUM → LOW)
-3. Log: `Stabilization: finding [description] persisted from iteration [N-1] — [provided specific fix | downgraded to MEDIUM]`
+   - Downgrade the finding to one severity level lower (HIGH → MEDIUM, MEDIUM → LOW, LOW → drop the finding entirely)
+3. Log: `Stabilization: finding [description] persisted from iteration [N-1] — [provided specific fix | downgraded to MEDIUM | dropped (LOW floor)]`
 
 This prevents loops where the verifier repeatedly flags the same issue without giving ws-dev enough information to resolve it. The 3-iteration cap in ws-orchestrator is the hard stop — this rule ensures the iterations are productive.
 
@@ -405,8 +405,8 @@ pass_rate = met_criteria / total_criteria * 100
 
 | Status | Condition |
 |--------|-----------|
-| `pass` | Zero HIGH severity findings **AND** >80% criteria met |
-| `partial` | Some criteria met, some findings, but does not meet `fail` threshold |
+| `pass` | Zero HIGH severity findings **AND** ≥80% criteria met |
+| `partial` | Does not meet `pass` threshold and does not meet `fail` threshold |
 | `fail` | Any HIGH severity finding **OR** <50% criteria met |
 
 **Note:** ws-verifier uses `pass`/`partial`/`fail` instead of the base contract's `success`/`partial`/`failed`. This is a deliberate domain-specific override — verification results are judgments, not task outcomes. ws-orchestrator's Step 4.1.6 expects this vocabulary.

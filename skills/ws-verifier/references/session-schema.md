@@ -11,13 +11,13 @@
 ```json
 {
   "skill": "ws-verifier",
-  "version": "2.1.0",
-  "plugin_version": "2.1.0",
+  "version": "2.2.0",
+  "plugin_version": "2.2.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",
   "updated_at": "ISO-8601",
-  "status": "active | paused | complete | blocked | failed",
+  "status": "active | paused | complete | failed",
   "current_step": "step identifier",
   "completed_steps": [],
   "task": {},

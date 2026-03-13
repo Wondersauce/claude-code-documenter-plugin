@@ -31,13 +31,15 @@ for file in ${WS_SESSION_DIR}/*.json; do
 done
 
 # Keep only last 5 snapshots to prevent unbounded growth
-SNAPSHOTS=$(ls -1d "${SNAPSHOT_DIR}/"*/ 2>/dev/null | sort -r)
-COUNT=0
-while IFS= read -r dir; do
-  COUNT=$((COUNT + 1))
-  if [ $COUNT -gt 5 ]; then
-    rm -rf "$dir"
-  fi
-done <<< "$SNAPSHOTS"
+SNAPSHOTS=$(ls -1d "${SNAPSHOT_DIR}/"*/ 2>/dev/null || true)
+if [ -n "$SNAPSHOTS" ]; then
+  COUNT=0
+  echo "$SNAPSHOTS" | sort -r | while IFS= read -r dir; do
+    COUNT=$((COUNT + 1))
+    if [ $COUNT -gt 5 ]; then
+      rm -rf "$dir"
+    fi
+  done
+fi
 
 exit 0

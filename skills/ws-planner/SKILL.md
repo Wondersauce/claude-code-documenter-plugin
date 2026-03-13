@@ -159,6 +159,7 @@ If the task description is ambiguous or underspecified, classify each ambiguity:
 
 If **any** blocking ambiguity exists:
 - Record all ambiguities in `issues[]` as `"blocking-ambiguity: [description]"`
+- Set session `status` to `"complete"` and `current_step` to `"complete"` before returning (prevents stale `active` session from creating a resume loop on re-invocation)
 - Return immediately with `status: "partial"`, `outputs: { "tasks": [] }`, and `next_action: "Resolve ambiguities before planning"`
 - **Do not continue to decomposition** — a plan built on unresolved blocking ambiguities propagates bad assumptions downstream
 
@@ -243,7 +244,8 @@ Break the task into atomic sub-tasks. Each sub-task should represent a single ws
   "estimated_complexity": "low | medium | high",
   "design_quality": "standard | high",
   "backend_quality": "standard | high",
-  "playbook_procedure": "name of the playbook procedure to follow",
+  "playbook_procedure": "name of the playbook procedure to follow (null if deferred)",
+  "structural_guidance": "conventions, file patterns, and implementation approach (only when playbook_procedure is null)",
   "reuse": [
     {
       "capability": "name",

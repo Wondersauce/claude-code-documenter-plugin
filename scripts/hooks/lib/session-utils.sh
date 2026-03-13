@@ -10,7 +10,7 @@ WS_SESSION_DIR=".ws-session"
 # Returns the skill name (orchestrator, planner, dev, verifier, documenter)
 # or "none" if no active session.
 get_active_skill() {
-  local skill_files=("orchestrator" "planner" "dev" "verifier")
+  local skill_files=("orchestrator" "planner" "dev" "verifier" "documenter")
   for skill in "${skill_files[@]}"; do
     local file="${WS_SESSION_DIR}/${skill}.json"
     if [ -f "$file" ]; then

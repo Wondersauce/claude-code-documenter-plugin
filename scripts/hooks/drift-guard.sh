@@ -95,6 +95,19 @@ case "$ACTIVE_SKILL" in
     esac
     ;;
 
+  documenter)
+    # Documenter can write: documentation files, session files, CLAUDE.md, config
+    case "$FILE_PATH" in
+      documentation/*|.ws-session/*|CLAUDE.md)
+        exit 0
+        ;;
+      *)
+        echo "BLOCKED: ws-codebase-documenter can only write to documentation/ and session files."
+        exit 2
+        ;;
+    esac
+    ;;
+
   *)
     # Unknown skill — allow (don't block on unexpected state)
     exit 0

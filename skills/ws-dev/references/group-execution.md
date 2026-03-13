@@ -50,18 +50,12 @@ If no `iteration_findings` (first execution): implement all tasks.
 **For each task to implement:**
 
 1. Log: `Implementing task [N/total]: [title]`
-2. Follow the playbook procedure already loaded in Step 1
-3. Use shared reuse capabilities from `shared_context.reuse`
-4. After each file change, append to `files_changed[]` with `task_id` attribution:
-   ```json
-   {
-     "task_id": "...",
-     "path": "path/to/file",
-     "action": "created | modified",
-     "description": "what was done"
-   }
-   ```
-5. After completing the task, write a task result entry to `task_results[]` in the session file:
+2. Write the current task_id to `.ws-session/active-task.json`: `{"task_id": "[task_id]"}`
+   This marker file allows hook-tracked file changes to be attributed to the correct task at read time.
+3. Follow the playbook procedure already loaded in Step 1
+4. Use shared reuse capabilities from `shared_context.reuse`
+5. File changes are tracked automatically by the PostToolUse hook into `.ws-session/file-changes.json`. At task completion, read entries from `file-changes.json` that were written since this task started (compare timestamps with the task start time) and attribute them to the current `task_id` for the task result.
+6. After completing the task, write a task result entry to `task_results[]` in the session file:
    ```json
    {
      "task_id": "...",
@@ -72,9 +66,11 @@ If no `iteration_findings` (first execution): implement all tasks.
    ```
 6. Update `updated_at` in the session file
 
-If any task returns `blocked` or `failed`: stop group execution immediately. Return the group result with the blocking task identified.
+If any task returns `blocked`, `unfeasible`, or `failed`: stop group execution immediately. Return the group result with the blocking task identified.
 
 ### Step 4 (group) — Build, Test & Lint Gate + Per-task self-verification
+
+**Load file changes:** Read `.ws-session/file-changes.json` to get all files created/modified during group implementation. Attribute each file change to its task using the timestamps and the task start times recorded during Step 3.
 
 **First, run the Build, Test & Lint Gate (Step 4.1 from the single-task flow) once for the entire group.** All tasks share a single branch, so one build/test/lint run covers the group. Record the results and attribute them to every task in the group.
 

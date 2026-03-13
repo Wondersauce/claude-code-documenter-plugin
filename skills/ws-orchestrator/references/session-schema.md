@@ -69,11 +69,13 @@ When the verifier sends a task back to ws-dev for iteration, the dev and verifie
 
 `total` is the sum of all token counts across all fields.
 
-**Token tracking rules:**
-- After every Task() call, read the token usage from the Task() result metadata and record it in the appropriate field
-- Update `total` after every token recording
-- Token counts are informational metadata — never block or warn based on token counts
-- If token metadata is unavailable from a Task() call, record `0` and note in `errors[]`: `"Token metadata unavailable for [skill] invocation"`
+**Token tracking (v2.2.0+):**
+
+Token usage is automatically accumulated by the SubagentStop hook into `.ws-session/token-log.json`. The `token_usage` field in `orchestrator.json` is populated at session completion (Step 5.4) by reading and aggregating the token log. The orchestrator does NOT manually record tokens after each Task() call — the hook handles this.
+
+At Step 5.4, read `.ws-session/token-log.json` and aggregate entries by `skill` field to produce the `token_usage` summary. If the token log is missing or empty, set all counts to `0` and note in `errors[]`.
+
+Token counts are informational metadata — never block or warn based on token counts.
 
 **Fields removed from v1.0.0:**
 - `iteration_count` — replaced by per-task `task_iteration_counts`
@@ -98,7 +100,6 @@ When the verifier sends a task back to ws-dev for iteration, the dev and verifie
 - `merged_task_branches` — history of merged task branches
 - `task_iteration_counts` — per-task iteration tracking (keyed by task_id)
 - `current_task_index` — index into execution_order for recovery
-- `token_usage` — per-skill and total token consumption across all Task() calls
 
 ### State update rules
 
