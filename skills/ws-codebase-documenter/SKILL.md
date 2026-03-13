@@ -363,6 +363,30 @@ Also update prescriptive documents when relevant changes are detected:
 | New frontend files or convention change | `style-guide.md` — update rules and tokens |
 | New cross-module call or shared resource | `integration-map.md` — add integration pattern |
 
+#### 3.4.1 Prescriptive Document Change Detection
+
+For each changed file from step 3.2, run these detection heuristics to determine if prescriptive documents need updating:
+
+**Playbook triggers** (`playbook.md`):
+1. If a new file matches an existing `detected_patterns` glob: check if it introduces a new base class, interface, or required method not in the current pattern definition. If yes, update the playbook procedure.
+2. If a new file does NOT match any `detected_patterns` glob but contains route definitions, model definitions, or service class patterns: a new pattern may have emerged. Flag for playbook addition.
+3. If an existing file matching a pattern glob has its base class or required method signatures changed: update the corresponding playbook procedure.
+
+**Capability-map triggers** (`capability-map.md`):
+1. If a new public function, class, or exported module is added (detected via stack-specific export patterns from `references/stacks/[stack].md`): add to the appropriate capability-map category.
+2. If a public function's signature changes (parameters added/removed, return type changed): update the existing capability-map entry.
+3. If a public function is deleted: remove from capability-map (or mark deprecated if referenced elsewhere).
+
+**Style-guide triggers** (`style-guide.md`):
+1. If new CSS/SCSS files are added: check for new design tokens (variables) not in the current token registry. Add any new tokens.
+2. If the root stylesheet's import chain changes: re-detect CSS organization pattern.
+3. If a new CSS methodology indicator appears (e.g., first `*.module.css` file): flag for methodology review.
+
+**Integration-map triggers** (`integration-map.md`):
+1. If a file imports from a module it didn't previously import from (cross-module call): add integration pattern.
+2. If a new event emitter, signal, or hook registration is added: add to event/hook contracts.
+3. If a new database table or shared cache key appears in multiple modules: add to shared resources.
+
 #### 3.4.5 Consistency Check
 
 Skip if `config.consistency_check.enabled` is `false`.

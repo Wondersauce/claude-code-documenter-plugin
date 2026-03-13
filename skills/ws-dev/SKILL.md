@@ -39,148 +39,12 @@ ws-dev handles three task areas. When invoked directly (as `ws-dev`), route base
 |------|----------|
 | `frontend` | Execute as ws-dev/frontend (see `frontend/SKILL.md`) |
 | `backend` | Execute as ws-dev/backend (see `backend/SKILL.md`) |
+| `devops` | Execute as ws-dev/devops (see `devops/SKILL.md`) |
 | `fullstack` | Execute the Fullstack Orchestration flow below |
 
 ### Fullstack Orchestration
 
-For `fullstack` tasks, ws-dev orchestrates the work by splitting it into backend and frontend components and delegating each via nested `Task()` calls. The parent ws-dev instance manages the split, delegation, and result merging.
-
-**Session file ownership:** The parent ws-dev instance owns `.ws-session/dev.json`. Nested `Task()` calls do **not** write their own session files — they return structured results to the parent. The `nested: true` flag is critical — it tells the sub-skill to skip all session file operations.
-
-#### Task Splitting Rules
-
-Analyze the task definition to identify which portions belong to backend vs. frontend:
-
-| Concern | Routes To |
-|---------|-----------|
-| Data models, schema changes, migrations | Backend |
-| API endpoints, route handlers, middleware | Backend |
-| Business logic, services, validation rules | Backend |
-| External service integrations | Backend |
-| UI components, templates, pages | Frontend |
-| Client-side state management | Frontend |
-| Styling, CSS, design tokens, responsive layouts | Frontend |
-| Client-side API integration (fetch calls, SDK wrappers) | Frontend |
-| Accessibility (ARIA, keyboard nav, alt text) | Frontend |
-
-**Shared concerns — ownership and coordination:**
-
-| Shared Concern | Owner | Consumer |
-|---------------|-------|----------|
-| API contract (endpoints, request/response shapes) | Backend defines | Frontend consumes from backend result |
-| Shared types/interfaces for API payloads | Backend creates | Frontend imports or references |
-| Validation rules (client + server) | Backend is source of truth | Frontend may duplicate for UX — note in `issues[]` |
-
-#### Derived Task Definitions
-
-Create two task definitions derived from the parent fullstack task. Each derived task inherits the parent's `playbook_procedure` (or `structural_guidance` if deferred), `constraints`, and `depends_on`.
-
-**Backend derived task:**
-- `task_id`: `[parent_task_id]-be`
-- `area`: `backend`
-- `acceptance_criteria`: backend-relevant criteria from parent
-- `backend_quality`: from parent task (propagated)
-- `files_to_create` / `files_to_modify`: backend files from parent
-- `reuse`: backend-relevant reuse from parent
-
-**Frontend derived task:**
-- `task_id`: `[parent_task_id]-fe`
-- `area`: `frontend`
-- `acceptance_criteria`: frontend-relevant criteria from parent
-- `design_quality`: from parent task (propagated)
-- `depends_on`: includes `[parent_task_id]-be`
-- `files_to_create` / `files_to_modify`: frontend files from parent
-- `reuse`: frontend-relevant reuse from parent
-- `backend_context`: populated after backend execution (see below)
-
-**Acceptance criteria splitting:**
-- Criteria about data, API behavior, validation, server-side logic → backend
-- Criteria about UI, layout, interaction, accessibility, client-side behavior → frontend
-- **Integration criteria** (e.g., "user clicks button and data persists") → both tasks get the criterion, each responsible for their half. Mark with `"integration_criterion": true` in both.
-
-#### Quality Tier Propagation
-
-Route quality tiers from the parent fullstack task to the appropriate sub-task:
-
-| Parent Field | Routes To |
-|-------------|-----------|
-| `design_quality` | Frontend derived task only |
-| `backend_quality` | Backend derived task only |
-
-Both can be `"high"` independently — a fullstack task can activate the Design Quality Layer for frontend AND the Production Hardening Layer for backend simultaneously.
-
-#### Execution Sequence
-
-**Backend first, then frontend.** Frontend code typically consumes backend APIs, so the backend must be defined first.
-
-1. **Execute backend:** `Task(ws-dev/backend)` with `nested: true` and the backend derived task
-2. **If backend fails:** Do not execute frontend. Return the backend result as the fullstack result with `next_action` indicating the backend issue must be resolved first.
-3. **Extract API context** from the backend result:
-   - New endpoints created (paths, methods, request/response shapes)
-   - Data models defined (field names, types, relationships)
-   - Auth requirements for new endpoints
-   - Shared types or interfaces created (with file locations)
-4. **Attach API context to frontend task** via the `backend_context` field:
-   ```json
-   {
-     "backend_context": {
-       "endpoints": [
-         {
-           "path": "/api/resource",
-           "method": "POST",
-           "request_shape": "{ field: type }",
-           "response_shape": "{ id: string, ... }",
-           "auth_required": true
-         }
-       ],
-       "models": ["ModelName"],
-       "shared_types_files": ["path/to/types.ts"]
-     }
-   }
-   ```
-5. **Execute frontend:** `Task(ws-dev/frontend)` with `nested: true`, the frontend derived task, and the `backend_context`
-
-#### Result Merging
-
-After both sub-tasks complete, merge into a single fullstack result:
-
-- `files_changed`: concatenate from both, preserving area attribution in descriptions
-- `self_verification.criteria_results`: merge from both — integration criteria appear in both
-- `self_verification.constraint_results`: merge from both
-- `self_verification.playbook_violations`: merge from both
-- `self_verification.backend_checks`: from backend result
-- `self_verification.frontend_checks`: from frontend result
-- `issues`: concatenate from both, prefix with `[BE]` or `[FE]` for clarity
-
-**When quality layers are active**, also include:
-- `production_intent`: from backend result (if `backend_quality: "high"`)
-- `design_intent`: from frontend result (if `design_quality: "high"`)
-- `self_verification.backend_quality_checks`: from backend result
-- `self_verification.design_quality_checks`: from frontend result
-
-**Status merging** — use worst-case across both sub-tasks:
-- `failed` > `blocked` > `unfeasible` > `partial` > `success`
-
-#### Tightly Coupled Fallback
-
-If the task **cannot be cleanly split** — the backend and frontend logic are interleaved in the same files (e.g., Next.js server components, Remix loaders, SvelteKit load functions, or full-stack framework patterns where the same file handles both concerns):
-
-1. Log: `WARNING: Fullstack task has tightly coupled fe/be concerns — executing as single implementation`
-2. Do **not** delegate via `Task()` — execute the task directly in the parent ws-dev context
-3. Load and apply conventions from both layers:
-   - Backend Conventions Layer (Universal Rules + Smart Defaults)
-   - Frontend Conventions Layer (Styling, Component, Accessibility, Responsive rules)
-4. If `backend_quality: "high"`: run the Production Hardening Phase and apply Quality Domains
-5. If `design_quality: "high"`: run the Design Thinking Phase and apply Aesthetic Guidelines
-6. Include both `backend_checks` and `frontend_checks` in self-verification
-7. Note `"executed_as": "tightly_coupled"` in the result for ws-verifier context
-
-#### Deferred Handling for Fullstack
-
-When the parent fullstack task has `playbook_procedure: null` + `structural_guidance` (deferred/new project):
-- Both derived tasks inherit `playbook_procedure: null` and `structural_guidance` from the parent
-- Each sub-task independently detects deferred state and uses structural guidance
-- No additional deferred handling needed at the orchestration level — the sub-skills handle it
+For `fullstack` tasks, ws-dev splits into backend and frontend components and delegates each via nested `Task()` calls. **Load `references/fullstack-orchestration.md` for the complete fullstack orchestration flow** — task splitting rules, derived task definitions, quality tier propagation, execution sequence, result merging, tightly coupled fallback, and deferred handling.
 
 ---
 
@@ -198,14 +62,14 @@ Before doing anything else:
 1. Check for `.ws-session/dev.json`
 2. If found and status is `active` or `paused` **and `group_id` is null**:
    a. Read the file completely — this is a standard single-task recovery
-   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version`).
-      - If `plugin_version` is missing or does not match: **do not attempt recovery.** Log: `Session version mismatch (session: v[session_version or "unknown"], current: v[current_version]). Cannot recover — initializing fresh session.` Initialize a new session file and continue with Step 1.
+   b. **Version check:** Compare `plugin_version` against current plugin version (from `.claude-plugin/plugin.json`).
+      - If missing or mismatched: log `Session version mismatch — initializing fresh session.` Initialize a new session file and continue with Step 1.
    c. Log: `Resuming ws-dev session [session_id], current step: [current_step]`
    d. Continue from `current_step`, skipping `completed_steps`
 3. If found and status is `active` or `paused` **and `group_id` is non-null**:
    a. Read the file completely — this is a group recovery after compaction or interruption
-   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version`).
-      - If `plugin_version` is missing or does not match: **do not attempt recovery.** Log: `Session version mismatch (session: v[session_version or "unknown"], current: v[current_version]). Cannot recover — initializing fresh session.` Initialize a new session file and continue with Step 1.
+   b. **Version check:** Compare `plugin_version` against current plugin version (from `.claude-plugin/plugin.json`).
+      - If missing or mismatched: log `Session version mismatch — initializing fresh session.` Initialize a new session file and continue with Step 1.
    c. Log: `Resuming ws-dev group session [session_id], group: [group_id]`
    d. Read `task_results` to determine which tasks in the group have already completed. A task is considered complete if it has an entry in `task_results` with `status: "success"` or `status: "partial"`.
    e. Identify the first task in `group.tasks` (in order) that does not have a completed entry in `task_results`
@@ -386,6 +250,19 @@ ERROR: Playbook procedure "[name]" not found in documentation/playbook.md
 
 Return `status: "blocked"` with `next_action: "Update playbook with procedure for [task type] or re-plan"`
 
+### 2.1b Search for existing similar functionality
+
+Before implementing any new utility, helper, or shared function:
+
+1. Search the codebase using 3 keyword variations for the functionality you're about to create
+2. Check `documentation/capability-map.md` for entries with similar names or purposes
+3. If a match is found: use it (add to `reuse` in the task result). If a near-match is found that could be extended: return `status: "blocked"` with the extension needed — do not create a parallel implementation.
+
+Log the search:
+```
+Duplicate check: searched for [keyword1], [keyword2], [keyword3] — [found X matches | no matches]
+```
+
 ### 2.2 Verify reuse items
 
 For each entry in the task definition's `reuse` array:
@@ -471,11 +348,11 @@ Update `.ws-session/dev.json`:
 
 Before returning results, verify your work dynamically (build/test) and statically (code review). **Do not self-pass** — note all issues.
 
-### 4.1 Run Build & Tests
+### 4.1 Build, Test & Lint Gate
 
-Before any static checks, verify that the code actually compiles and tests pass.
+Before static checks, verify the code compiles, tests pass, and lint is clean. **Do not return results until the build passes or the fix-attempt limit is reached.**
 
-**1. Detect build/test commands** from the project's configuration files:
+**1. Detect build/test/lint commands** from the project's configuration:
 
 | File | Build Command | Test Command |
 |------|--------------|-------------|
@@ -485,25 +362,48 @@ Before any static checks, verify that the code actually compiles and tests pass.
 | `go.mod` | `go build ./...` | `go test ./...` |
 | `pyproject.toml` | Detect from build system | `pytest` or configured test runner |
 
-If the project uses a different build system, adapt accordingly. Use the project's documented build/test commands from the playbook if available — they take precedence over auto-detection.
+Lint detection (run in addition to build):
 
-**2. Run the build command first.** If it fails:
+| Indicator | Lint Command |
+|-----------|-------------|
+| `package.json` with `scripts.lint` | `npm run lint` |
+| `package.json` with `scripts.typecheck` | `npm run typecheck` |
+| `tsconfig.json` (no build/typecheck script) | `npx tsc --noEmit` |
+| `pyproject.toml` with `[tool.ruff]` or `.ruff.toml` | `ruff check .` |
+| `.eslintrc*` or `eslint.config.*` (no lint script) | `npx eslint .` |
+| `golangci-lint` in project | `golangci-lint run` |
+| `Cargo.toml` | `cargo clippy` |
+
+Use the project's documented build/test/lint commands from the playbook if available — they take precedence over auto-detection.
+
+**2. Run build.** If it fails:
 - Log the full error output
-- Record: `build_test_results.build: { status: "fail", error: "[error output]" }`
-- **Do not run tests** — a failing build must be fixed first
-- Attempt to fix the build error. If the fix requires an architectural decision, return `status: "blocked"`
+- Attempt to fix errors in files ws-dev created or modified. If the error is in a pre-existing file, log as `pre_existing_errors[]` and skip.
+- Re-run the build. Repeat up to 3 fix-and-rebuild cycles.
+- If still failing after 3 attempts: record in `issues[]`, proceed with build failure noted.
 
-**3. Run the test command.** If tests fail:
-- Log which tests failed and their error output
-- Record: `build_test_results.tests: { status: "fail", failed_count: N, error: "[output]" }`
-- Attempt to fix failing tests. If the failures are in new code you wrote, fix them. If the failures are in pre-existing tests unrelated to your changes, note them in `issues[]` but do not modify them.
+**3. Run lint** (if detected). Same fix-and-retry logic as build — up to 3 attempts.
 
-**4. If both pass:**
-- Record: `build_test_results: { build: { status: "pass" }, tests: { status: "pass", passed_count: N } }`
+**4. Run tests.** If tests fail:
+- Fix failing tests in new code you wrote. If failures are in pre-existing tests unrelated to your changes, note in `issues[]` but do not modify them.
+- A passing build with failing tests is `partial` at best.
 
-**5. If no build/test commands are detected:**
-- Log: `WARNING: No build or test commands detected — skipping build/test gate`
-- Record: `build_test_results: { build: { status: "skipped" }, tests: { status: "skipped" } }`
+**5. If no build/test/lint commands detected:**
+- Log: `WARNING: No build/test/lint commands detected — skipping build gate`
+
+**6. Record results:**
+
+```json
+{
+  "build_gate": {
+    "build": { "status": "pass | fail | skipped", "command": "...", "error": "" },
+    "lint": { "status": "pass | fail | skipped", "command": "...", "error": "" },
+    "tests": { "status": "pass | fail | skipped", "command": "...", "passed_count": 0, "failed_count": 0, "error": "" },
+    "attempts": 1,
+    "pre_existing_errors": []
+  }
+}
+```
 
 ### 4.2 Check acceptance criteria
 
@@ -532,97 +432,6 @@ Record any violations found — do not fix them silently. ws-verifier will catch
 
 Update `.ws-session/dev.json`:
 - Set `self_verification` with results from 4.1-4.4
-- Set `current_step` to `"4.5"`
-
----
-
-## Step 4.5 — Build Validation
-
-After self-verification, validate that the project builds cleanly. **Do not return results until the build passes.**
-
-### 4.5.1 Detect build system
-
-Detect the project's build/compile/lint tooling from the project root. Check in this order and use the **first match**:
-
-| Indicator | Build Command | Type |
-|-----------|--------------|------|
-| `package.json` with `scripts.build` | `npm run build` (or `yarn build` / `pnpm build` per lockfile) | Build |
-| `package.json` with `scripts.typecheck` | `npm run typecheck` | Type check |
-| `tsconfig.json` (no build script) | `npx tsc --noEmit` | Type check |
-| `pyproject.toml` with `[tool.mypy]` | `mypy .` | Type check |
-| `Cargo.toml` | `cargo build` | Build |
-| `go.mod` | `go build ./...` | Build |
-| `*.csproj` or `*.sln` | `dotnet build` | Build |
-| `pom.xml` | `mvn compile` | Build |
-| `build.gradle` or `build.gradle.kts` | `gradle build` | Build |
-| `composer.json` with `scripts.build` | `composer run build` | Build |
-| `Makefile` with `build` target | `make build` | Build |
-
-**Lint detection (run in addition to build if available):**
-
-| Indicator | Lint Command |
-|-----------|-------------|
-| `package.json` with `scripts.lint` | `npm run lint` |
-| `pyproject.toml` with `[tool.ruff]` or `.ruff.toml` | `ruff check .` |
-| `pyproject.toml` with `[tool.flake8]` or `.flake8` | `flake8 .` |
-| `.eslintrc*` or `eslint.config.*` (no lint script) | `npx eslint .` |
-| `golangci-lint` in project | `golangci-lint run` |
-| `Cargo.toml` | `cargo clippy` |
-
-If no build system is detected: log `No build system detected — skipping build validation`, set `build_validation.status` to `"skipped"`, and proceed to Step 5.
-
-### 4.5.2 Run build
-
-Execute the detected build command. Capture stdout and stderr.
-
-```
-Running build validation: [command]
-```
-
-### 4.5.3 Run lint (if available)
-
-If a lint command was detected, run it after the build:
-
-```
-Running lint validation: [command]
-```
-
-### 4.5.4 Evaluate results
-
-**If build and lint both pass:**
-- Log: `Build validation passed`
-- Set `build_validation.status` to `"passed"`
-- Proceed to Step 5
-
-**If build or lint fails:**
-
-1. Log: `Build validation failed — fixing issues`
-2. Read the error output and identify the failing files and error messages
-3. Fix each error in the changed files. **Only fix files that ws-dev created or modified in this task** — if the build failure is in a file ws-dev did not touch, it is a pre-existing issue:
-   - Log: `Pre-existing build error in [file] — not caused by this task, skipping`
-   - Record in `build_validation.pre_existing_errors[]`
-4. After applying fixes, re-run the build (and lint if applicable)
-5. **Repeat up to 3 fix-and-rebuild cycles.** If the build still fails after 3 attempts:
-   - Set `build_validation.status` to `"failed"`
-   - Set `build_validation.errors` to the remaining error output
-   - Log: `Build validation failed after 3 fix attempts — returning with build errors noted`
-   - Record all remaining errors in `issues[]`
-   - **Do not block the return** — proceed to Step 5 with the build failure noted. The verifier will catch it as a finding.
-
-### 4.5.5 Update session state
-
-Update `.ws-session/dev.json`:
-- Set `build_validation` with:
-  ```json
-  {
-    "status": "passed | failed | skipped",
-    "build_command": "npm run build",
-    "lint_command": "npm run lint",
-    "attempts": 1,
-    "pre_existing_errors": [],
-    "errors": []
-  }
-  ```
 - Set `current_step` to `"5"`
 
 ---
@@ -663,21 +472,14 @@ Return to ws-orchestrator:
       "criteria_understood": true
     },
     "self_verification": {
-      "build_test_results": {
-        "build": { "status": "pass | fail | skipped", "error": "" },
-        "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0, "error": "" }
+      "build_gate": {
+        "build": { "status": "pass | fail | skipped", "command": "..." },
+        "lint": { "status": "pass | fail | skipped", "command": "..." },
+        "tests": { "status": "pass | fail | skipped", "command": "...", "passed_count": 0, "failed_count": 0 }
       },
       "criteria_results": [],
       "constraint_results": [],
       "playbook_violations": []
-    },
-    "build_validation": {
-      "status": "passed | failed | skipped",
-      "build_command": "npm run build",
-      "lint_command": "npm run lint",
-      "attempts": 1,
-      "pre_existing_errors": [],
-      "errors": []
     },
     "issues": []
   },
@@ -690,7 +492,7 @@ Return to ws-orchestrator:
 
 | Status | Condition |
 |--------|-----------|
-| `success` | All acceptance criteria met, all constraints respected, no playbook violations detected, **and build/tests pass** (or are skipped if no build system detected) |
+| `success` | All acceptance criteria met, all constraints respected, no playbook violations detected, **and build gate passes** (or is skipped if no build system detected) |
 | `partial` | Some criteria met but issues remain (unmet criteria, detected violations, or test failures noted in self-verification). A passing build with failing tests is `partial` at best. |
 | `blocked` | Cannot proceed — architectural issue, missing documentation, or conflicting requirements |
 | `unfeasible` | The task definition is not implementable as specified — contradictory requirements, impossible constraints, or the plan does not match the actual codebase. Unlike `blocked`, this means the task itself needs to change, not just the environment. |
@@ -698,73 +500,9 @@ Return to ws-orchestrator:
 
 ---
 
-## Session File Schema
+## Session File Schema & Error Handling
 
-`.ws-session/dev.json`:
-
-```json
-{
-  "skill": "ws-dev",
-  "version": "2.1.0",
-  "plugin_version": "2.1.0",
-  "session_id": "uuid-v4",
-  "project": "project-name",
-  "started_at": "ISO-8601",
-  "updated_at": "ISO-8601",
-  "status": "active | paused | complete | blocked | unfeasible | failed",
-  "current_step": "step identifier",
-  "completed_steps": [],
-  "mode": "build | iterate",
-  "task_branch": "ws/a1b2-add-user-preferences-be-task-01",
-  "feature_branch": "ws/a1b2-add-user-preferences",
-  "task_definition": {},
-  "group_id": null,
-  "task_results": [],
-  "iteration_findings": [],
-  "docs_loaded": [],
-  "checklist": {},
-  "files_changed": [],
-  "self_verification": {},
-  "build_validation": {},
-  "outputs": {},
-  "errors": [],
-  "notes": ""
-}
-```
-
-### State update rules
-
-- Write the session file atomically after **every** state transition
-- Always update `updated_at` on each write
-- Never delete the session file — ws-orchestrator manages archival
-- The session file must be valid, human-readable JSON at all times
-- On write failure, log the error and return `status: "failed"`
-
----
-
-## Error Handling
-
-### Documentation read failure
-
-If a document cannot be read:
-1. If critical doc: return `status: "blocked"` immediately
-2. If non-critical: log warning, continue with reduced context
-
-### File write failure
-
-If a file cannot be created or modified:
-1. Log: `ERROR: Cannot write [path]: [error]`
-2. Record in `errors[]`
-3. If the file is essential to the task: return `status: "failed"`
-4. If non-essential: continue, note in `issues[]`
-
-### Reuse target missing
-
-If a reuse capability cannot be found at its documented location:
-1. Log: `WARNING: Reuse target [capability] not found at [location]`
-2. Search for it in nearby locations (it may have been moved)
-3. If found elsewhere: use it, note the location discrepancy in `issues[]`
-4. If not found: return `status: "blocked"` — do not re-implement it
+**Load `references/session-schema.md`** for the `.ws-session/dev.json` schema, state update rules, and error handling procedures (documentation read failure, file write failure, reuse target missing).
 
 ---
 
@@ -783,163 +521,4 @@ If you find yourself about to:
 
 ## Group Execution Flow
 
-This flow is used when ws-dev is invoked with a `group` field (batched invocation from ws-orchestrator). The single-task flow above remains unchanged for non-group invocations.
-
-**Branch model for groups:** A group gets ONE task sub-branch (since all tasks in a group share context). The branch name uses the group_id: `[feature_branch]-group-[group_id_short]`. All tasks in the group are implemented on this single branch. On verification pass, the entire group branch merges into the feature branch. The orchestrator manages the branch — ws-dev receives the `task_branch` name and checks it out.
-
-### Step 1 (group) — Load shared context
-
-Load documentation from `group.shared_context.docs_to_load`. Load once for the entire group. Log:
-
-```
-Group invocation: [task count] tasks, procedure: [procedure], area: [area]
-Loading shared documentation (once for group): [doc list]
-```
-
-Write initial session state to `.ws-session/dev.json`:
-- Set `group_id` to `group.group_id`
-- Set `task_results` to empty array
-- Set `status` to `"active"`
-
-### Step 2 (group) — Pre-implementation checklist
-
-Run the standard pre-implementation checklist once against the shared context. Additionally verify:
-
-```
-- [x] All tasks share area: [area]
-- [x] All tasks share procedure: [procedure]
-- [x] No file conflicts between tasks confirmed
-- [x] Execution order within group: [task titles in order]
-- [x] Reuse capabilities loaded: [count]
-```
-
-### Step 3 (group) — Sequential implementation
-
-Process tasks in the order they appear in `group.tasks`.
-
-**Determine which tasks to implement:**
-
-If `iteration_findings` are present and carry `task_id` attribution:
-- Implement only tasks whose `task_id` appears in `iteration_findings`
-- For all other tasks in the group: carry forward the most recent `task_results` entry for that `task_id` from the session file. Do not re-execute them.
-- Log: `Iteration re-queue: implementing [N] of [total] tasks. Carrying forward: [task titles]`
-
-If no `iteration_findings` (first execution): implement all tasks.
-
-**For each task to implement:**
-
-1. Log: `Implementing task [N/total]: [title]`
-2. Follow the playbook procedure already loaded in Step 1
-3. Use shared reuse capabilities from `shared_context.reuse`
-4. After each file change, append to `files_changed[]` with `task_id` attribution:
-   ```json
-   {
-     "task_id": "...",
-     "path": "path/to/file",
-     "action": "created | modified",
-     "description": "what was done"
-   }
-   ```
-5. After completing the task, write a task result entry to `task_results[]` in the session file:
-   ```json
-   {
-     "task_id": "...",
-     "status": "success | partial | blocked | failed",
-     "files_changed": [],
-     "issues": []
-   }
-   ```
-6. Update `updated_at` in the session file
-
-If any task returns `blocked` or `failed`: stop group execution immediately. Return the group result with the blocking task identified.
-
-### Step 4 (group) — Build & Test Gate + Per-task self-verification
-
-**First, run the Build & Test Gate (Step 4.1 from the single-task flow) once for the entire group.** All tasks share a single branch, so one build/test run covers the group. Record the results and attribute them to every task in the group.
-
-Then run self-verification independently for each task in the group — both implemented tasks and carried-forward tasks. For carried-forward tasks, use their existing `task_results` entry as the self-verification record (they were already verified on a previous iteration).
-
-For each implemented task, record independently:
-
-```json
-{
-  "task_id": "...",
-  "build_test_results": {},
-  "criteria_results": [],
-  "constraint_results": [],
-  "playbook_violations": [],
-  "frontend_checks": [],
-  "backend_checks": []
-}
-```
-
-> **Sub-skill checks in group mode:** When tasks are implemented via ws-dev/frontend or ws-dev/backend (nested invocations), those sub-skills produce `frontend_checks` and `backend_checks` respectively. In group mode, these checks must be attributed per-task — include them in each task's self-verification record above. If a task does not involve a sub-skill area, omit that field or leave it as an empty array.
-
-Do not aggregate across tasks. ws-verifier requires per-task evidence.
-
-### Step 4.5 (group) — Build Validation
-
-Run the same build validation procedure as Step 4.5 in the single-task flow. For groups, this runs **once** after all tasks in the group are implemented and self-verified — not per-task.
-
-If the build fails, fix errors in files changed by any task in the group (attribute fixes to the originating task). The same 3-attempt limit and pre-existing error handling apply.
-
-The `build_validation` result is included at the top level of the group result (not per-task).
-
-### Step 5 (group) — Write session file and return group result
-
-Update `.ws-session/dev.json`:
-- Set `status` to `"complete"`
-- Ensure all `task_results` entries are written
-
-Return to ws-orchestrator:
-
-```json
-{
-  "skill": "ws-dev",
-  "session_id": "uuid-v4",
-  "mode": "build | iterate",
-  "task_branch": "ws/a1b2-add-user-preferences-group-abc1",
-  "group_id": "uuid",
-  "status": "success | partial | blocked | unfeasible | failed",
-  "summary": "one-line outcome for the group",
-  "task_results": [
-    {
-      "task_id": "...",
-      "status": "success | partial | blocked | failed",
-      "files_changed": [
-        {
-          "task_id": "...",
-          "path": "path/to/file",
-          "action": "created | modified",
-          "description": "..."
-        }
-      ],
-      "self_verification": {
-        "criteria_results": [],
-        "constraint_results": [],
-        "playbook_violations": []
-      },
-      "issues": [],
-      "carried_forward": false
-    }
-  ],
-  "shared_context_used": {
-    "docs_loaded": [],
-    "reuse_applied": []
-  },
-  "build_validation": {
-    "status": "passed | failed | skipped",
-    "build_command": "...",
-    "lint_command": "...",
-    "attempts": 1,
-    "pre_existing_errors": [],
-    "errors": []
-  },
-  "issues": [],
-  "next_action": "..."
-}
-```
-
-`carried_forward: true` on a task result means that task was not re-implemented in this invocation — its result is from a previous iteration. ws-verifier uses this to skip re-verification of carried-forward tasks whose previous verification passed.
-
-**Top-level `status`** is the worst-case status across all task results, including carried-forward tasks. A carried-forward task with `status: "partial"` contributes `partial` to the group status.
+When invoked with a `group` field (batched invocation from ws-orchestrator), ws-dev executes tasks sequentially on a shared branch. **Load `references/group-execution.md` for the complete group execution flow** — shared context loading, pre-implementation checklist, sequential implementation, per-task self-verification, and group result format.

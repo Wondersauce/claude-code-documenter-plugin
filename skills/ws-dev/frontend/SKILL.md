@@ -235,12 +235,18 @@ While implementing:
 
 ### Step 4 — Self-verification (frontend additions)
 
-**Build & Test Gate (Step 4.1):** Run the project's build and test commands as documented in the parent ws-dev SKILL.md. For frontend projects, pay special attention to:
+**Build, Test & Lint Gate (Step 4.1):** Run the project's build and test commands as documented in the parent ws-dev SKILL.md. For frontend projects, pay special attention to:
 - TypeScript compilation succeeds (no type errors)
 - Bundler build completes without errors (webpack, vite, esbuild, etc.)
 - Lint passes with no new errors introduced (`npm run lint` or equivalent if configured)
 - Component tests pass (Jest, Vitest, Testing Library, etc.)
 - If E2E tests exist and are configured for local runs, execute them
+
+Frontend-specific build gate notes:
+- If the project uses a framework build (Next.js, Vite, Webpack), standard `npm run build` detection covers it
+- For projects with both `build` and `typecheck` scripts, run both
+- CSS/SCSS compilation errors (missing variables, invalid token references) are build errors — fix them before returning
+- Storybook builds (`scripts.build-storybook`) are NOT part of the build gate
 
 Then add these static checks:
 
@@ -270,26 +276,18 @@ Then add these static checks:
 | Complexity match | Code richness matches aesthetic ambition per the Complexity Matching table |
 | Atmospheric detail | Backgrounds and textures reinforce the direction (not flat/default unless that IS the direction) |
 
-### Step 4.5 — Build Validation (frontend additions)
-
-This step follows the same procedure as ws-dev Step 4.5 (see `../SKILL.md`). Frontend-specific notes:
-
-- If the project uses a framework build (Next.js, Vite, Webpack, etc.), the standard `npm run build` detection covers it
-- For projects with both `build` and `typecheck` scripts, run both — TypeScript type errors in components are common frontend build failures
-- CSS/SCSS compilation errors (missing variables, invalid token references) are build errors — fix them before returning
-- If the project has a Storybook setup (`scripts.build-storybook`), do **not** include it in build validation — it is a documentation tool, not a build gate
-
 ---
 
 ## Result Format
 
-Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with frontend-specific entries in `self_verification` and `build_validation`:
+Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with frontend-specific entries in `self_verification`:
 
 ```json
 {
   "self_verification": {
-    "build_test_results": {
+    "build_gate": {
       "build": { "status": "pass | fail | skipped" },
+      "lint": { "status": "pass | fail | skipped" },
       "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0 }
     },
     "criteria_results": [],
@@ -304,14 +302,6 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
       "component_reuse_verified": true,
       "style_guide_compliant": true
     }
-  },
-  "build_validation": {
-    "status": "passed | failed | skipped",
-    "build_command": "npm run build",
-    "lint_command": "npm run lint",
-    "attempts": 1,
-    "pre_existing_errors": [],
-    "errors": []
   }
 }
 ```
@@ -327,8 +317,9 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
     "complexity_match": "editorial → structured grid, strong type, purposeful whitespace"
   },
   "self_verification": {
-    "build_test_results": {
+    "build_gate": {
       "build": { "status": "pass | fail | skipped" },
+      "lint": { "status": "pass | fail | skipped" },
       "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0 }
     },
     "criteria_results": [],
@@ -353,14 +344,6 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
       "complexity_match": true,
       "atmospheric_detail": true
     }
-  },
-  "build_validation": {
-    "status": "passed",
-    "build_command": "npm run build",
-    "lint_command": "npm run lint",
-    "attempts": 1,
-    "pre_existing_errors": [],
-    "errors": []
   }
 }
 ```

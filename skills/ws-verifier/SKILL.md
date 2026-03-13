@@ -44,6 +44,20 @@ When in doubt, rate **higher** — it is better for ws-dev to address a finding 
 
 ---
 
+## Iteration Stabilization Rule
+
+When verifying a task that was re-implemented after a previous verification (iteration mode — `iteration_findings` are present in the build result):
+
+1. Compare each current finding against the previous iteration's findings (by `domain`, `file`, and `description` similarity)
+2. If a finding from the previous iteration reappears at the same severity after ws-dev addressed it:
+   - The verifier MUST either provide a **more specific recommended fix** (with exact code or pattern to use), OR
+   - Downgrade the finding to one severity level lower (HIGH → MEDIUM, MEDIUM → LOW)
+3. Log: `Stabilization: finding [description] persisted from iteration [N-1] — [provided specific fix | downgraded to MEDIUM]`
+
+This prevents loops where the verifier repeatedly flags the same issue without giving ws-dev enough information to resolve it. The 3-iteration cap in ws-orchestrator is the hard stop — this rule ensures the iterations are productive.
+
+---
+
 ## Step 0 — Session Recovery
 
 Before doing anything else:
@@ -51,8 +65,8 @@ Before doing anything else:
 1. Check for `.ws-session/verifier.json`
 2. If found and status is `active` or `paused`:
    a. Read the file completely
-   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version`).
-      - If `plugin_version` is missing or does not match: **do not attempt recovery.** Log: `Session version mismatch (session: v[session_version or "unknown"], current: v[current_version]). Cannot recover — initializing fresh session.` Initialize a new session file and continue with Step 1.
+   b. **Version check:** Compare `plugin_version` against current plugin version (from `.claude-plugin/plugin.json`).
+      - If missing or mismatched: log `Session version mismatch — initializing fresh session.` Initialize a new session file and continue with Step 1.
    c. Log: `Resuming ws-verifier session [session_id], current step: [current_step]`
    d. Continue from `current_step`, skipping `completed_steps`
 3. If not found or status is `complete`:
@@ -442,67 +456,9 @@ The orchestrator tracks which task/group each verification call belongs to. The 
 
 ---
 
-## Session File Schema
+## Session File Schema & Error Handling
 
-`.ws-session/verifier.json`:
-
-```json
-{
-  "skill": "ws-verifier",
-  "version": "2.1.0",
-  "plugin_version": "2.1.0",
-  "session_id": "uuid-v4",
-  "project": "project-name",
-  "started_at": "ISO-8601",
-  "updated_at": "ISO-8601",
-  "status": "active | paused | complete | blocked | failed",
-  "current_step": "step identifier",
-  "completed_steps": [],
-  "task": {},
-  "build_result": {},
-  "docs_loaded": [],
-  "files_read": [],
-  "criteria_results": [],
-  "findings": [],
-  "overall_status": "pass | partial | fail",
-  "pass_rate": "0%",
-  "outputs": {},
-  "errors": [],
-  "notes": ""
-}
-```
-
-### State update rules
-
-- Write the session file atomically after **every** state transition
-- Always update `updated_at` on each write
-- Never delete the session file — ws-orchestrator manages archival
-- The session file must be valid, human-readable JSON at all times
-- On write failure, log the error and return `status: "failed"`
-
----
-
-## Error Handling
-
-### Documentation read failure
-
-If a document cannot be read:
-1. If critical doc (playbook, capability-map): return `status: "failed"` immediately
-2. If non-critical: log warning, continue with reduced verification scope
-
-### Changed file read failure
-
-If a changed file listed in build results cannot be read:
-1. Log: `ERROR: Cannot read changed file [path]: [error]`
-2. Record as a HIGH finding: `"Changed file [path] is inaccessible — cannot verify"`
-3. Continue with remaining files
-
-### Empty build results
-
-If build results contain no files_changed:
-1. Log: `WARNING: No files changed in build results`
-2. Mark all acceptance criteria as `fail` (nothing was implemented)
-3. Return `status: "fail"` with finding: `"No implementation output to verify"`
+**Load `references/session-schema.md`** for the `.ws-session/verifier.json` schema, state update rules, and error handling procedures (documentation read failure, changed file read failure, empty build results).
 
 ---
 

@@ -39,20 +39,8 @@ Before doing anything else:
 1. Check for `.ws-session/orchestrator.json`
 2. If found and status is `active` or `paused`:
    a. Read the file completely
-   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (`2.1.0`). Read the current version from `.claude-plugin/plugin.json` → `version` field.
-      - If `plugin_version` is missing from the session file: treat as a version mismatch (pre-versioning session).
-      - If versions do not match:
-        1. **Do not attempt silent recovery.** Present to user:
-           ```
-           Session version mismatch detected.
-           Session created with plugin v[session_version], current plugin is v[current_version].
-
-           Options:
-           1. Attempt recovery — load what we can, flag any missing or changed fields
-           2. Dump session — archive it and start fresh
-           ```
-        2. If user chooses recovery: validate every expected field in the session file against the current schema. For each missing or unrecognized field, log: `WARNING: Field [field_name] missing or incompatible — [reason]`. If any required field (`session_id`, `status`, `current_step`, `completed_steps`) is missing, **stop recovery** and report: `Recovery failed: required field [field_name] missing. Session was created with v[session_version] which uses a different schema. Starting fresh.` Then initialize a new session.
-        3. If user chooses dump: rename to `.ws-session/archive/[session_id]-dumped-v[session_version].json`, initialize a new session, continue with Step 1.
+   b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version` field).
+      - If `plugin_version` is missing or versions do not match: log `Session version mismatch (v[session_version] → v[current_version]). Starting fresh.`, rename to `.ws-session/archive/[session_id]-stale.json`, initialize a new session, and continue with Step 1.
       - If versions match: proceed normally.
    c. Verify git branch state:
       - If `feature_branch` is set and exists: `git checkout [feature_branch]`
@@ -75,6 +63,12 @@ Check if `.ws-session/` exists. If not, create it:
 
 ```bash
 mkdir -p .ws-session
+```
+
+Check if `.gitignore` contains `.ws-session/`. If not, append:
+
+```bash
+echo '.ws-session/' >> .gitignore
 ```
 
 ### 1.2 Verify documentation exists
@@ -356,11 +350,9 @@ Update session state:
 | `frontend` | `ws-dev/frontend` |
 | `backend` | `ws-dev/backend` |
 | `fullstack` | `ws-dev` |
-| `devops` | `ws-dev` |
+| `devops` | `ws-dev/devops` |
 
 `fullstack` routes to the parent `ws-dev` skill (not a sub-skill) because fullstack orchestration involves splitting the task into backend and frontend components and delegating to both sub-skills internally. The parent `ws-dev` handles this split via its Fullstack Orchestration flow.
-
-`devops` also routes to the parent `ws-dev` as a temporary routing. A dedicated `ws-dev/devops` sub-skill should be added long-term to handle infrastructure-as-code, CI/CD, and platform tasks with their own conventions.
 
 For groups: use `group.shared_context.area`.
 
@@ -629,105 +621,9 @@ Move `.ws-session/orchestrator.json` to `.ws-session/archive/[session_id].json`.
 
 ---
 
-## Session File Schema
+## Session File Schema & Error Handling
 
-`.ws-session/orchestrator.json`:
-
-```json
-{
-  "skill": "ws-orchestrator",
-  "version": "2.1.0",
-  "plugin_version": "2.1.0",
-  "session_id": "uuid-v4",
-  "project": "project-name",
-  "started_at": "ISO-8601",
-  "updated_at": "ISO-8601",
-  "status": "active | paused | plan_approved | build_complete | complete | aborted | failed",
-  "current_step": "step identifier",
-  "completed_steps": [],
-  "docs_bootstrapped": "true | false | deferred",
-  "boot_block_installed": false,
-  "pending_task": "user's task description",
-  "task_type": "feature | bugfix | refactor | documentation | infrastructure",
-  "task_area": "frontend | backend | fullstack | devops",
-  "current_plan": [],
-  "execution_manifest": {},
-  "completed_tasks": [],
-  "original_branch": "main",
-  "feature_branch": "ws/a1b2-add-user-preferences",
-  "current_task_branch": null,
-  "merged_task_branches": [],
-  "task_iteration_counts": {},
-  "current_task_index": 0,
-  "max_iterations": 3,
-  "docs_updated": false,
-  "token_usage": {
-    "orchestrator": 0,
-    "planner": 0,
-    "tasks": [],
-    "final_documenter": 0,
-    "total": 0
-  },
-  "outputs": {},
-  "errors": [],
-  "notes": ""
-}
-```
-
-**`token_usage` structure:**
-
-The `orchestrator` and `planner` fields track tokens consumed by the orchestrator context and the planner Task() call respectively. The `tasks` array contains one entry per execution item (task or group), structured as:
-
-```json
-{
-  "task_title": "short title from task definition",
-  "skill_tokens": {
-    "dev": 0,
-    "verifier": 0,
-    "documenter": 0
-  },
-  "retries": 0
-}
-```
-
-When the verifier sends a task back to ws-dev for iteration, the dev and verifier token counts for that task are **cumulative** — add each iteration's tokens to the running total. Increment `retries` by 1 for each iteration cycle (verifier fail/partial → ws-dev re-invocation). A task that passes on the first attempt has `retries: 0`.
-
-`final_documenter` tracks tokens for the Step 5 final documentation pass.
-
-`total` is the sum of all token counts across all fields.
-
-**Token tracking rules:**
-- After every Task() call, read the token usage from the Task() result metadata and record it in the appropriate field
-- Update `total` after every token recording
-- Token counts are informational metadata — never block or warn based on token counts
-- If token metadata is unavailable from a Task() call, record `0` and note in `errors[]`: `"Token metadata unavailable for [skill] invocation"`
-
-**Fields removed from v1.0.0:**
-- `iteration_count` — replaced by per-task `task_iteration_counts`
-- `verification_findings` — now per-task, transient between build/verify calls
-- `plan_conflicts` — handled inline in per-task loop
-- `completed_groups` — groups still work but merge into per-task loop via shared branches
-
-**Fields added in v2.1.0:**
-- `plugin_version` — the plugin version that created this session (read from `.claude-plugin/plugin.json`). Used by Step 0 to detect version mismatches on recovery.
-- `token_usage` — per-skill token tracking for the session (see structure above)
-
-**Fields added in v2.0.0:**
-- `original_branch` — the branch the user was on when the session started (for abort rollback)
-- `feature_branch` — the session's feature branch (created after plan approval)
-- `current_task_branch` — the active task sub-branch (null when between tasks)
-- `merged_task_branches` — history of merged task branches
-- `task_iteration_counts` — per-task iteration tracking (keyed by task_id)
-- `current_task_index` — index into execution_order for recovery
-- `token_usage` — per-skill and total token consumption across all Task() calls
-
-### State update rules
-
-- Write the session file atomically after **every** state transition
-- Always update `updated_at` on each write
-- Never delete the session file — archive on completion
-- The session file must be valid, human-readable JSON at all times
-- On write failure, log the error and present to user
+**Load `references/session-schema.md`** for the `.ws-session/orchestrator.json` schema, token_usage structure, field history, state update rules, and error handling procedures (sub-skill invocation failure, session file corruption).
 
 ---
 
@@ -752,86 +648,11 @@ Rules for `[DIRECT]` mode:
 
 ## Boot Block Injection
 
-When triggered from Step 2.1 (or on user request), inject the ws-orchestrator auto-activation block into the project's `CLAUDE.md`.
-
-### Injection procedure
-
-1. Read `CLAUDE.md` in the project root. If it does not exist, create it.
-2. Check for the marker `## WS AI Master Plan — Session Boot`. If already present, log `Boot block already installed` and return.
-3. Prepend the following block to the **beginning** of `CLAUDE.md` (before any existing content):
-
-```markdown
-## WS AI Master Plan — Session Boot
-
-**STOP. Before responding to any user message, complete these steps in order:**
-
-1. Run: `cat .ws-session/orchestrator.json 2>/dev/null` — if it exists and status is `active` or `paused`, you have a session to resume
-2. Read `skills/ws-orchestrator/SKILL.md`
-3. You are now **ws-orchestrator**. You route tasks to sub-agents via Task(). You do not write code.
-
-**Every response must begin with:** `> *I am ws-orchestrator...*`
-If it does not, you have broken the boot protocol.
-
-**There are no exceptions.** Bug fixes, hotfixes, "quick changes", CI failures, typos in code — all go through the plan → build → verify → document lifecycle. If the user asks you to "just fix this", route it through ws-orchestrator.
-
-**If you have lost context:** Read `.ws-session/orchestrator.json`. If absent, ask the user to describe the current task.
-
-**[DIRECT] override:** Users can prefix a message with `[DIRECT]` for read-only informational queries (explain code, find files, answer questions). [DIRECT] never permits file writes, git commits, or code changes.
-```
-
-4. Set `boot_block_installed = true` in session state.
-5. Log: `Boot block installed in CLAUDE.md — ws-orchestrator will auto-activate on future sessions`
-
-### Idempotency
-
-The injection is idempotent — the marker check (`## WS AI Master Plan — Session Boot`) prevents duplicate injection. If the boot block is already present, no changes are made.
-
-### Boot Block Update (old-format migration)
-
-Projects with an older boot block need upgrading. The old format contains `### Orchestrator Activation` — the new format does not.
-
-**Detection:** If `CLAUDE.md` contains both the marker `## WS AI Master Plan — Session Boot` AND the string `### Orchestrator Activation`, it is an old-format boot block.
-
-**Update procedure:**
-
-1. Read `CLAUDE.md`
-2. Locate the old boot block — starts at `## WS AI Master Plan — Session Boot`, ends at the next `##` heading or EOF
-3. Remove the old boot block from its current position
-4. Prepend the new boot block (from the injection procedure above) to the beginning of the file
-5. Log: `Boot block upgraded to v2 and moved to top of CLAUDE.md`
-
-This procedure is triggered from Step 1.5.1 during environment validation.
+When triggered from Step 2.1 (or on user request), inject the ws-orchestrator auto-activation block into the project's `CLAUDE.md`. **Load `references/boot-block.md` for the complete injection procedure**, idempotency rules, and old-format migration.
 
 ---
 
-## Error Handling
-
-### Sub-skill invocation failure
-
-If a `Task()` call fails to invoke (skill not found, crash, timeout):
-
-1. Log the error to `.ws-session/orchestrator.json` under `errors[]`
-2. Present to user:
-   ```
-   Sub-skill [name] failed: [error]
-   Options:
-   1. Retry
-   2. Skip this task (continue to next task)
-   3. Abort session (discard all work)
-   ```
-3. Await user instruction
-4. If option 3: trigger the Abort Flow (Step 4.9)
-
-### Session file corruption
-
-If `.ws-session/orchestrator.json` cannot be parsed:
-
-1. Log: `Session file corrupted. Starting fresh session.`
-2. Rename corrupted file to `.ws-session/orchestrator.json.corrupted.[timestamp]`
-3. Ask user to describe the current task state
-4. Initialize a new session
-
-### Drift detection
+## Drift Detection
 
 If you find yourself about to:
 - Read a source code file

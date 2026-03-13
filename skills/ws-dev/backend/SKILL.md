@@ -235,11 +235,17 @@ While implementing:
 
 ### Step 4 — Self-verification (backend additions)
 
-**Build & Test Gate (Step 4.1):** Run the project's build and test commands as documented in the parent ws-dev SKILL.md. For backend projects, pay special attention to:
+**Build, Test & Lint Gate (Step 4.1):** Run the project's build and test commands as documented in the parent ws-dev SKILL.md. For backend projects, pay special attention to:
 - Compilation/type-checking passes (TypeScript `tsc`, Go `go vet`, Rust `cargo check`, etc.)
 - All existing tests pass — new code must not break existing tests
 - If new functionality was added, verify tests exist for it (note in `issues[]` if missing)
 - If migration files were created, verify they apply cleanly (if a local database is available)
+
+Backend-specific build gate notes:
+- For compiled languages (Go, Rust, Java, .NET), build validation catches type errors, missing imports, and signature mismatches
+- For interpreted languages (Python, Node.js without TypeScript), lint becomes the primary gate
+- If migration validation tooling exists (e.g., `npx prisma validate`, `python manage.py check`), detect and run it
+- If the project depends on a test database that is unavailable, log as pre-existing and skip
 
 Then add these static checks:
 
@@ -271,26 +277,18 @@ Then add these static checks:
 | Observability instrumentation | Structured logging with correlation IDs, health checks present |
 | Security posture | Input sanitization, audit logging for sensitive ops, no leaked secrets |
 
-### Step 4.5 — Build Validation (backend additions)
-
-This step follows the same procedure as ws-dev Step 4.5 (see `../SKILL.md`). Backend-specific notes:
-
-- For compiled languages (Go, Rust, Java, .NET), build validation catches type errors, missing imports, and signature mismatches that self-verification cannot
-- For interpreted languages (Python, Node.js without TypeScript), the build step may not exist — lint validation becomes the primary gate
-- Migration files should not cause build failures, but if the project has migration validation tooling (e.g., `npx prisma validate`, `python manage.py check`), detect and run it
-- If the project has a test database setup that the build depends on, and it is unavailable, log the pre-existing error and skip — do not attempt to configure databases
-
 ---
 
 ## Result Format
 
-Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with backend-specific entries in `self_verification` and `build_validation`:
+Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with backend-specific entries in `self_verification`:
 
 ```json
 {
   "self_verification": {
-    "build_test_results": {
+    "build_gate": {
       "build": { "status": "pass | fail | skipped" },
+      "lint": { "status": "pass | fail | skipped" },
       "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0 }
     },
     "criteria_results": [],
@@ -307,14 +305,6 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
       "no_sensitive_data_exposure": true,
       "no_hardcoded_config": true
     }
-  },
-  "build_validation": {
-    "status": "passed | failed | skipped",
-    "build_command": "cargo build",
-    "lint_command": "cargo clippy",
-    "attempts": 1,
-    "pre_existing_errors": [],
-    "errors": []
   }
 }
 ```
@@ -330,8 +320,9 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
     "blast_radius": "User-facing payment flow — high impact"
   },
   "self_verification": {
-    "build_test_results": {
+    "build_gate": {
       "build": { "status": "pass | fail | skipped" },
+      "lint": { "status": "pass | fail | skipped" },
       "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0 }
     },
     "criteria_results": [],
@@ -359,14 +350,6 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
       "observability_instrumentation": true,
       "security_posture": true
     }
-  },
-  "build_validation": {
-    "status": "passed",
-    "build_command": "cargo build",
-    "lint_command": "cargo clippy",
-    "attempts": 1,
-    "pre_existing_errors": [],
-    "errors": []
   }
 }
 ```

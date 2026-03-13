@@ -38,16 +38,16 @@ Before doing anything else:
 2. If found and status is `active` or `paused`:
    a. Read the file completely
    b. **Version check:** Compare `plugin_version` in the session file against the current plugin version (read from `.claude-plugin/plugin.json` → `version`).
-      - If `plugin_version` is missing or does not match: **do not attempt recovery.** Log: `Session version mismatch (session: v[session_version or "unknown"], current: v[current_version]). Cannot recover — initializing fresh session.` Initialize a new session file and continue with Step 1.
+      - If `plugin_version` is missing or does not match: log `Session version mismatch — initializing fresh session.` Initialize a new session file and continue with Step 1.
    c. Log: `Resuming ws-planner session [session_id], current step: [current_step]`
    d. Continue from `current_step`, skipping `completed_steps`
 3. If found and status is `complete` **and** the invocation includes `feedback`:
    a. Read the file completely — this is a **re-planning** invocation
    b. Log: `Re-planning session [session_id] with feedback`
    c. Set `status` to `"active"`
-   d. Jump directly to the **Re-planning with Feedback** section
+   d. Jump directly to the **Re-planning with Feedback** section in `references/session-schema.md`
 4. If not found or status is `complete` (without feedback):
-   a. Initialize a new session file (see Session File Schema below)
+   a. Initialize a new session file (see Session File Schema in `references/session-schema.md`)
    b. Continue with Step 1
 
 ---
@@ -300,62 +300,26 @@ Update `.ws-session/planner.json`:
 
 ## Step 4.5 — Group Tasks
 
-**Purpose:** Analyze the task definition array produced in Step 4 and cluster eligible tasks into groups for batched execution. Ungrouped tasks remain as individual task definitions and execute independently.
+**Purpose:** Cluster eligible tasks for batched execution to reduce the number of Task() calls.
 
-### 4.5.1 Build the dependency graph
+### 4.5.1 Identify groupable tasks
 
-From the `depends_on` fields across all task definitions, construct the full dependency graph. Record for each task: its direct dependencies, its transitive dependencies, and whether it is a dependency of any other task.
+Tasks are eligible for grouping when ALL of these conditions are met:
+- Same `area` (not `fullstack`)
+- Same `playbook_procedure`
+- `estimated_complexity` is `low`
+- No dependency relationship (direct or transitive) with any other candidate
+- No file conflict (`files_to_create` of one does not appear in `files_to_modify` of another)
 
-### 4.5.2 Compute grouping keys
+### 4.5.2 Form groups
 
-For each task, compute its grouping key:
-```
-grouping_key = [area, playbook_procedure]
-```
+From the eligible tasks, form groups of up to 3 tasks each. If more than 3 tasks qualify for the same grouping key (`[area, playbook_procedure]`), form multiple groups of up to 3.
 
-Tasks with the same grouping key are candidates for grouping. Immediately remove from consideration any task where:
-- `area` is `"fullstack"`
-- `estimated_complexity` is `"high"`
-- `estimated_complexity` is `"medium"` and its only candidate partners are also `"medium"`
+A group's `estimated_complexity` is:
+- `low` if all tasks are `low` and there are 2 or fewer
+- `medium` if there are 3 tasks
 
-### 4.5.3 Form candidate sets
-
-For each unique grouping key with two or more candidate tasks:
-
-a. Remove any task that has a dependency relationship (direct or transitive) with any other task in the candidate set
-
-b. Remove any task where a file in its `files_to_create` appears in another candidate task's `files_to_modify`
-
-c. Check module overlap: for tasks to remain in the same candidate set, at least one module must be common across all tasks in the set. A task "touches" a module if any file in its `files_to_create` or `files_to_modify` resides within that module's directory per `documentation/architecture.md`. If no common module exists, attempt to split the candidate set into subsets that do share a module.
-
-d. Apply the complexity threshold (see below). If the combination exceeds the threshold, remove the highest-complexity task from the candidate set and leave it ungrouped.
-
-e. If two or more tasks remain: this is a valid group. If only one remains: leave it ungrouped.
-
-**Complexity threshold:**
-
-| Combination | Group eligible | Rationale |
-|-------------|---------------|-----------|
-| low + low | Yes | Both tasks small, clear efficiency win |
-| low + low + low | Yes | Combined stays within medium territory |
-| low + medium | Yes | Combined fits comfortably in a focused context |
-| low + low + medium | Yes | Combined approaches but does not exceed high territory |
-| medium + medium | No | Combined approaches high territory — isolation earns its cost |
-| Any high | No | Always executes independently |
-| low + medium + medium | No | Combined exceeds high territory |
-
-**Group-level complexity formula:**
-
-A group's `estimated_complexity` is determined as follows:
-- If the group contains any `medium` task: group complexity is `medium`
-- If the group contains 3 or more `low` tasks: group complexity is `medium`
-- Otherwise: group complexity is `low`
-
-### 4.5.4 Enforce maximum group size
-
-Maximum group size: **4 tasks**. If more than 4 tasks qualify for a single group: form the primary group from the 4 tasks with the most overlapping module context (most files in common modules). Leave remaining qualified tasks ungrouped — they may form their own group if they satisfy all criteria among themselves after the primary group is formed.
-
-### 4.5.5 Construct group objects
+### 4.5.3 Construct group objects
 
 For each valid group:
 
@@ -367,27 +331,18 @@ For each valid group:
   "shared_context": {
     "area": "backend",
     "playbook_procedure": "Add REST Endpoint",
-    "docs_to_load": [
-      "documentation/playbook.md",
-      "documentation/capability-map.md",
-      "documentation/architecture.md"
-    ],
-    "modules": ["users", "auth"],
+    "docs_to_load": [],
+    "modules": [],
     "reuse": []
   },
-  "tasks": [
-    { "...full task definition..." },
-    { "...full task definition..." }
-  ],
+  "tasks": [],
   "depends_on_groups": []
 }
 ```
 
-`docs_to_load` is the union of all documents any task in the group would have loaded individually, deduplicated. `reuse` is the union of all reuse opportunities across all tasks in the group, deduplicated by capability name.
+`docs_to_load` is the union of documents any task in the group would load, deduplicated. `reuse` is the union of reuse opportunities, deduplicated by capability name. `depends_on_groups` maps task-level `depends_on` to group/task IDs for execution ordering.
 
-`depends_on_groups` is populated by mapping the `depends_on` task IDs of any task in the group to their containing group IDs or ungrouped task IDs. This becomes the group-level dependency used by ws-orchestrator for execution ordering.
-
-### 4.5.6 Build the execution manifest
+### 4.5.4 Build the execution manifest
 
 ```json
 {
@@ -395,26 +350,21 @@ For each valid group:
   "ungrouped_tasks": [],
   "execution_order": [
     { "type": "group", "id": "group-uuid-1" },
-    { "type": "task", "id": "task-uuid-1" },
-    { "type": "group", "id": "group-uuid-2" }
+    { "type": "task", "id": "task-uuid-1" }
   ]
 }
 ```
 
-`execution_order` is a topologically sorted list at the group/task level, respecting all dependency relationships. ws-orchestrator walks this list sequentially.
+`execution_order` is topologically sorted respecting all dependency relationships.
 
-### 4.5.7 Log grouping results
+### 4.5.5 Log grouping results
 
 ```
 Grouping: [X] tasks → [Y] groups + [Z] ungrouped tasks
-Groups formed:
-  Group [id]: "[task title 1]", "[task title 2]" — procedure: [procedure], area: [area]
-Ungrouped:
-  "[task title]" — reason: [high complexity | unique procedure | no module overlap | dependency conflict | fullstack]
 Estimated Task() calls: [N] (down from [original task count])
 ```
 
-### 4.5.8 Update session state
+### 4.5.6 Update session state
 
 Update `.ws-session/planner.json`:
 - Set `task_groups` to the groups array
@@ -480,31 +430,17 @@ Update `.ws-session/planner.json`:
 
 For each group in `task_groups`:
 
-- [ ] All tasks in the group share the same `area`
-- [ ] No task in the group has `area: "fullstack"`
-- [ ] All tasks in the group share the same `playbook_procedure`
-- [ ] No task in the group has `estimated_complexity: "high"`
-- [ ] The combination satisfies the complexity threshold table in Step 4.5.3
-- [ ] No intra-group dependency exists between any two tasks in the group
-- [ ] No file conflict exists (no file in `files_to_create` of one task appears in `files_to_modify` of another)
-- [ ] At least one common module is shared across all tasks in the group
-- [ ] Group size does not exceed 4 tasks
+- [ ] All tasks share the same `area` (not `fullstack`)
+- [ ] All tasks share the same `playbook_procedure`
+- [ ] All tasks have `estimated_complexity: "low"`
+- [ ] No dependency relationship exists between tasks in the group
+- [ ] No file conflict exists between tasks in the group
+- [ ] Group size does not exceed 3 tasks
 
 For `execution_order`:
-- [ ] The list is a valid topological sort of the dependency DAG at the group/task level — no item appears before an item it depends on
+- [ ] Valid topological sort — no item appears before an item it depends on
 
-If any validation fails: dissolve the offending group and perform the following three operations atomically:
-
-1. Remove the group from `task_groups`
-2. Move all tasks that were in the group to `ungrouped_tasks`
-3. In `execution_order`, replace the single `{ "type": "group", "id": "[group-id]" }` entry with one `{ "type": "task", "id": "[task-id]" }` entry per dissolved task, inserted at the same position in the sequence and in the same order the tasks appeared in the group's `tasks` array
-
-After all group validations are complete, verify that every `id` referenced in `execution_order` resolves to either a group in `task_groups` or a task in `ungrouped_tasks`. If any `id` is unresolvable, log an error and remove the orphaned entry from `execution_order`.
-
-Record the dissolution in `issues[]`:
-```
-"group-integrity: Group [id] dissolved — [reason]. [N] tasks reinserted into execution_order at position [pos]."
-```
+If any validation fails: dissolve the offending group — remove from `task_groups`, move tasks to `ungrouped_tasks`, replace the group entry in `execution_order` with individual task entries at the same position.
 
 Do not return `status: "failed"` for group integrity failures — ungrouped execution is always a valid fallback.
 
@@ -589,102 +525,9 @@ The flat `tasks` array is preserved for backward compatibility. `execution_manif
 
 ---
 
-## Session File Schema
+## Session File Schema, Re-planning & Error Handling
 
-`.ws-session/planner.json`:
-
-```json
-{
-  "skill": "ws-planner",
-  "version": "2.1.0",
-  "plugin_version": "2.1.0",
-  "session_id": "uuid-v4",
-  "project": "project-name",
-  "started_at": "ISO-8601",
-  "updated_at": "ISO-8601",
-  "status": "active | paused | complete | failed",
-  "current_step": "step identifier",
-  "completed_steps": [],
-  "task_description": "original task from ws-orchestrator",
-  "task_type": "feature | bugfix | refactor | documentation | infrastructure",
-  "task_area": "frontend | backend | fullstack | devops",
-  "docs_loaded": [],
-  "task_analysis": {
-    "relevant_patterns": [],
-    "relevant_procedures": [],
-    "affected_modules": [],
-    "ambiguities": []
-  },
-  "reuse_opportunities": [],
-  "task_definitions": [],
-  "task_groups": [],
-  "ungrouped_tasks": [],
-  "execution_manifest": {
-    "groups": [],
-    "ungrouped_tasks": [],
-    "execution_order": []
-  },
-  "validation_checklist": {},
-  "outputs": {},
-  "errors": [],
-  "notes": ""
-}
-```
-
-### State update rules
-
-- Write the session file atomically after **every** state transition
-- Always update `updated_at` on each write
-- Never delete the session file — ws-orchestrator manages archival
-- The session file must be valid, human-readable JSON at all times
-- On write failure, log the error and return `status: "failed"`
-
----
-
-## Re-planning with Feedback
-
-When ws-orchestrator re-invokes ws-planner with user feedback (Step 3.5 in ws-orchestrator):
-
-1. Read the previous plan from `.ws-session/planner.json`
-2. Apply the user's feedback to adjust:
-   - Add/remove/modify tasks
-   - Adjust acceptance criteria
-   - Change decomposition granularity
-   - Address flagged ambiguities
-3. Re-run validation (Step 5)
-4. Return updated result
-
-The session file retains the history — `notes` field records what changed and why.
-
-**Re-planning and groups:** Re-planning always recomputes groups from scratch. When Step 4.5 runs after decomposition produces the updated task array, previous group assignments are not preserved — they are derived state, not user input, and any task modification can change grouping eligibility. The new execution manifest replaces the previous one entirely.
-
----
-
-## Error Handling
-
-### Documentation read failure
-
-If a document cannot be read (permission, encoding, etc.):
-
-1. Log: `ERROR: Cannot read [path]: [error]`
-2. If critical doc: return `status: "failed"` immediately
-3. If non-critical: continue with warning
-
-### Task decomposition failure
-
-If the task cannot be meaningfully decomposed:
-
-1. Return as a single task with `estimated_complexity: "high"`
-2. Set `issues[]` with: `"Task could not be decomposed further — may require re-scoping"`
-3. Set status to `"partial"`
-
-### Circular dependencies
-
-If dependency analysis reveals a cycle:
-
-1. Log: `ERROR: Circular dependency detected: [task_a] <-> [task_b]`
-2. Break the cycle by merging the dependent tasks
-3. Record in `issues[]`
+**Load `references/session-schema.md`** for the `.ws-session/planner.json` schema, state update rules, re-planning with feedback procedure, and error handling (documentation read failure, task decomposition failure, circular dependencies).
 
 ---
 
