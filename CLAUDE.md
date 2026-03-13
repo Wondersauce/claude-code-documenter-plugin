@@ -2,7 +2,7 @@
 
 ## What This Is
 
-A Claude Code plugin (v2.2.0) that enforces a deterministic development lifecycle: **plan → build → verify → document**. Every coding session follows the same process regardless of task type, preventing architectural drift, code duplication, and styling entropy as projects grow.
+A Claude Code plugin (v2.3.0) that enforces a deterministic development lifecycle: **plan → build → verify → document**. Every coding session follows the same process regardless of task type, preventing architectural drift, code duplication, and styling entropy as projects grow.
 
 The plugin uses Markdown-based skills (executable specifications) backed by Claude Code hooks for enforcement. No compiled code, no runtime dependencies.
 
@@ -161,7 +161,8 @@ When editing hook scripts in `scripts/hooks/`:
 
 ## Version History
 
-- **v2.2.0** — Current. Hook-based enforcement (SessionStart, UserPromptSubmit, PreToolUse drift guards, PostToolUse file tracking, PreCompact snapshots, SubagentStop token tracking and build gate). Removes CLAUDE.md boot block in favor of hooks. Automated migration from boot block to hooks.
+- **v2.3.0** — Current. Adds ws-debugger skill for bug investigation with 12 bug-category strategies, git forensics, conditional web research, and depth-bounded investigation. Bugfix tasks now route through debugger → planner → dev → verifier.
+- **v2.2.0** — Hook-based enforcement (SessionStart, UserPromptSubmit, PreToolUse drift guards, PostToolUse file tracking, PreCompact snapshots, SubagentStop token tracking and build gate). Removes CLAUDE.md boot block in favor of hooks. Automated migration from boot block to hooks.
 - **v2.1.0** — Fullstack orchestration, task grouping, design quality layer, session versioning, token tracking.
 - **v2.0.0** — Lifecycle restructure, dev sub-skill upgrades, per-task verification loop.
 - **v1.0.0** — Initial release with linear plan-build-verify cycle.

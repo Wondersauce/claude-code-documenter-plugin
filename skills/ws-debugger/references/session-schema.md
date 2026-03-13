@@ -9,8 +9,8 @@
 ```json
 {
   "skill": "ws-debugger",
-  "version": "2.2.0",
-  "plugin_version": "2.2.0",
+  "version": "2.3.0",
+  "plugin_version": "2.3.0",
   "session_id": "uuid-v4",
   "project": "project-name",
   "started_at": "ISO-8601",

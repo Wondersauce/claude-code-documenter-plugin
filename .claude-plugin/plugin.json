@@ -1,6 +1,6 @@
 {
   "name": "ws-coding-workflows",
-  "version": "2.2.0",
+  "version": "2.3.0",
   "description": "AI-powered development orchestration for Claude Code. Includes ws-orchestrator (plan-build-verify-document lifecycle), ws-planner (structured task decomposition), ws-dev (pattern-locked implementation with frontend/backend/fullstack support), ws-verifier (independent output verification), and ws-codebase-documenter (documentation generation with prescriptive guides and consistency checking). Works with Node.js/TypeScript, Python, Go, Rust, .NET, Java, and PHP projects.",
   "author": {
     "name": "Wondersauce",

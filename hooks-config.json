@@ -1,5 +1,5 @@
 {
-  "ws-hooks-version": "2.2.0",
+  "ws-hooks-version": "2.3.0",
   "hooks": {
     "SessionStart": [
       {
