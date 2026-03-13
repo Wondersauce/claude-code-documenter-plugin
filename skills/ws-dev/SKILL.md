@@ -469,21 +469,55 @@ Update `.ws-session/dev.json`:
 
 ## Step 4 — Self-verification
 
-Before returning results, review your own work honestly. **Do not self-pass** — note all issues.
+Before returning results, verify your work dynamically (build/test) and statically (code review). **Do not self-pass** — note all issues.
 
-### 4.1 Check acceptance criteria
+### 4.1 Run Build & Tests
+
+Before any static checks, verify that the code actually compiles and tests pass.
+
+**1. Detect build/test commands** from the project's configuration files:
+
+| File | Build Command | Test Command |
+|------|--------------|-------------|
+| `package.json` | `npm run build` (if `build` script exists) | `npm test` (if `test` script exists) |
+| `Makefile` | `make build` (if `build` target exists) | `make test` (if `test` target exists) |
+| `Cargo.toml` | `cargo build` | `cargo test` |
+| `go.mod` | `go build ./...` | `go test ./...` |
+| `pyproject.toml` | Detect from build system | `pytest` or configured test runner |
+
+If the project uses a different build system, adapt accordingly. Use the project's documented build/test commands from the playbook if available — they take precedence over auto-detection.
+
+**2. Run the build command first.** If it fails:
+- Log the full error output
+- Record: `build_test_results.build: { status: "fail", error: "[error output]" }`
+- **Do not run tests** — a failing build must be fixed first
+- Attempt to fix the build error. If the fix requires an architectural decision, return `status: "blocked"`
+
+**3. Run the test command.** If tests fail:
+- Log which tests failed and their error output
+- Record: `build_test_results.tests: { status: "fail", failed_count: N, error: "[output]" }`
+- Attempt to fix failing tests. If the failures are in new code you wrote, fix them. If the failures are in pre-existing tests unrelated to your changes, note them in `issues[]` but do not modify them.
+
+**4. If both pass:**
+- Record: `build_test_results: { build: { status: "pass" }, tests: { status: "pass", passed_count: N } }`
+
+**5. If no build/test commands are detected:**
+- Log: `WARNING: No build or test commands detected — skipping build/test gate`
+- Record: `build_test_results: { build: { status: "skipped" }, tests: { status: "skipped" } }`
+
+### 4.2 Check acceptance criteria
 
 For each criterion in the task definition's `acceptance_criteria`:
 - Identify the code that satisfies it
 - Record: `{ "criterion": "...", "status": "met | unmet | partial", "evidence": "file:line" }`
 
-### 4.2 Check constraints
+### 4.3 Check constraints
 
 For each constraint in the task definition's `constraints`:
 - Verify it was respected
 - Record: `{ "constraint": "...", "status": "respected | violated", "details": "..." }`
 
-### 4.3 Check for obvious playbook violations
+### 4.4 Check for obvious playbook violations
 
 **If `playbook_procedure` is `null` (deferred/new project):** Skip playbook violation checks — there is no playbook to violate. Instead, verify that the implementation follows the `structural_guidance` from the task definition: file placement matches specified conventions, naming patterns are consistent, and framework setup follows the prescribed approach. Record any deviations.
 
@@ -494,10 +528,10 @@ For each constraint in the task definition's `constraints`:
 
 Record any violations found — do not fix them silently. ws-verifier will catch them anyway.
 
-### 4.4 Update session state
+### 4.5 Update session state
 
 Update `.ws-session/dev.json`:
-- Set `self_verification` with results from 4.1-4.3
+- Set `self_verification` with results from 4.1-4.4
 - Set `current_step` to `"4.5"`
 
 ---
@@ -629,6 +663,10 @@ Return to ws-orchestrator:
       "criteria_understood": true
     },
     "self_verification": {
+      "build_test_results": {
+        "build": { "status": "pass | fail | skipped", "error": "" },
+        "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0, "error": "" }
+      },
       "criteria_results": [],
       "constraint_results": [],
       "playbook_violations": []
@@ -652,11 +690,11 @@ Return to ws-orchestrator:
 
 | Status | Condition |
 |--------|-----------|
-| `success` | All acceptance criteria met, all constraints respected, no playbook violations detected, build passes (or no build system) |
-| `partial` | Some criteria met but issues remain (unmet criteria or detected violations noted in self-verification) |
+| `success` | All acceptance criteria met, all constraints respected, no playbook violations detected, **and build/tests pass** (or are skipped if no build system detected) |
+| `partial` | Some criteria met but issues remain (unmet criteria, detected violations, or test failures noted in self-verification). A passing build with failing tests is `partial` at best. |
 | `blocked` | Cannot proceed — architectural issue, missing documentation, or conflicting requirements |
 | `unfeasible` | The task definition is not implementable as specified — contradictory requirements, impossible constraints, or the plan does not match the actual codebase. Unlike `blocked`, this means the task itself needs to change, not just the environment. |
-| `failed` | Implementation could not be completed (critical error, missing dependencies) |
+| `failed` | Implementation could not be completed (critical error, missing dependencies, or **build fails and cannot be fixed**) |
 
 ---
 
@@ -815,15 +853,18 @@ If no `iteration_findings` (first execution): implement all tasks.
 
 If any task returns `blocked` or `failed`: stop group execution immediately. Return the group result with the blocking task identified.
 
-### Step 4 (group) — Per-task self-verification
+### Step 4 (group) — Build & Test Gate + Per-task self-verification
 
-Run self-verification independently for each task in the group — both implemented tasks and carried-forward tasks. For carried-forward tasks, use their existing `task_results` entry as the self-verification record (they were already verified on a previous iteration).
+**First, run the Build & Test Gate (Step 4.1 from the single-task flow) once for the entire group.** All tasks share a single branch, so one build/test run covers the group. Record the results and attribute them to every task in the group.
+
+Then run self-verification independently for each task in the group — both implemented tasks and carried-forward tasks. For carried-forward tasks, use their existing `task_results` entry as the self-verification record (they were already verified on a previous iteration).
 
 For each implemented task, record independently:
 
 ```json
 {
   "task_id": "...",
+  "build_test_results": {},
   "criteria_results": [],
   "constraint_results": [],
   "playbook_violations": [],

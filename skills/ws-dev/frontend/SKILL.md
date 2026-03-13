@@ -235,10 +235,20 @@ While implementing:
 
 ### Step 4 — Self-verification (frontend additions)
 
-Add these checks:
+**Build & Test Gate (Step 4.1):** Run the project's build and test commands as documented in the parent ws-dev SKILL.md. For frontend projects, pay special attention to:
+- TypeScript compilation succeeds (no type errors)
+- Bundler build completes without errors (webpack, vite, esbuild, etc.)
+- Lint passes with no new errors introduced (`npm run lint` or equivalent if configured)
+- Component tests pass (Jest, Vitest, Testing Library, etc.)
+- If E2E tests exist and are configured for local runs, execute them
+
+Then add these static checks:
 
 | Check | What to Look For |
 |-------|-----------------|
+| Build passes | TypeScript compilation and bundler build succeed without errors |
+| Tests pass | Component tests and any configured E2E tests pass |
+| Lint clean | No new lint errors introduced by your changes |
 | Design tokens | No hard-coded colors, spacing, typography, breakpoints |
 | `!important` | Zero uses unless documented override pattern |
 | ARIA labels | All interactive elements have appropriate ARIA |
@@ -278,6 +288,10 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
 ```json
 {
   "self_verification": {
+    "build_test_results": {
+      "build": { "status": "pass | fail | skipped" },
+      "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0 }
+    },
     "criteria_results": [],
     "constraint_results": [],
     "playbook_violations": [],
@@ -313,6 +327,10 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
     "complexity_match": "editorial → structured grid, strong type, purposeful whitespace"
   },
   "self_verification": {
+    "build_test_results": {
+      "build": { "status": "pass | fail | skipped" },
+      "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0 }
+    },
     "criteria_results": [],
     "constraint_results": [],
     "playbook_violations": [],

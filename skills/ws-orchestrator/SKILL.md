@@ -135,6 +135,13 @@ Check if the project's `CLAUDE.md` file contains the ws-orchestrator boot block 
 - If present: set `boot_block_installed = true`
 - If absent: set `boot_block_installed = false`
 
+### 1.5.1 Upgrade old boot block
+
+If `boot_block_installed = true`: check if `CLAUDE.md` also contains the string `### Orchestrator Activation`.
+
+- If yes: this is an old-format boot block. Run the Boot Block Update procedure (see Boot Block Injection section).
+- If no: boot block is current, no action needed.
+
 ### 1.6 Log activation
 
 ```
@@ -380,6 +387,24 @@ Task([sub-skill from 4.1.2]) with:
 ```
 
 #### 4.1.4 Evaluate dev result
+
+After every `Task()` call (ws-planner, ws-dev, ws-verifier, ws-codebase-documenter), record the token usage reported by the task. Accumulate totals in the session state under `token_usage`:
+
+```json
+{
+  "token_usage": {
+    "by_skill": {
+      "ws-planner": { "calls": 1, "input_tokens": 0, "output_tokens": 0 },
+      "ws-dev": { "calls": 2, "input_tokens": 0, "output_tokens": 0 },
+      "ws-verifier": { "calls": 2, "input_tokens": 0, "output_tokens": 0 },
+      "ws-codebase-documenter": { "calls": 3, "input_tokens": 0, "output_tokens": 0 }
+    },
+    "total": { "calls": 8, "input_tokens": 0, "output_tokens": 0 }
+  }
+}
+```
+
+Update `token_usage` after every `Task()` return — not just at session completion. This survives context compaction.
 
 The dev agent returns:
 
@@ -694,6 +719,7 @@ When the verifier sends a task back to ws-dev for iteration, the dev and verifie
 - `merged_task_branches` — history of merged task branches
 - `task_iteration_counts` — per-task iteration tracking (keyed by task_id)
 - `current_task_index` — index into execution_order for recovery
+- `token_usage` — per-skill and total token consumption across all Task() calls
 
 ### State update rules
 
@@ -732,31 +758,25 @@ When triggered from Step 2.1 (or on user request), inject the ws-orchestrator au
 
 1. Read `CLAUDE.md` in the project root. If it does not exist, create it.
 2. Check for the marker `## WS AI Master Plan — Session Boot`. If already present, log `Boot block already installed` and return.
-3. Append the following block to the end of `CLAUDE.md`:
+3. Prepend the following block to the **beginning** of `CLAUDE.md` (before any existing content):
 
 ```markdown
 ## WS AI Master Plan — Session Boot
 
-**Read and follow these instructions before doing anything else.**
+**STOP. Before responding to any user message, complete these steps in order:**
 
-### Orchestrator Activation
-You are operating as **ws-orchestrator**, the development orchestrator.
-- Read the ws-orchestrator SKILL.md immediately
-- Check `.ws-session/orchestrator.json` for an active session to resume
-- Do not write code, modify files, or take action until ws-orchestrator boot is complete
+1. Run: `cat .ws-session/orchestrator.json 2>/dev/null` — if it exists and status is `active` or `paused`, you have a session to resume
+2. Read `skills/ws-orchestrator/SKILL.md`
+3. You are now **ws-orchestrator**. You route tasks to sub-agents via Task(). You do not write code.
 
-### Your Identity as ws-orchestrator
-- You route tasks. You do not implement tasks.
-- All implementation happens in Task() sub-agents with isolated context windows.
-- Begin every response with: "I am ws-orchestrator"
+**Every response must begin with:** `> *I am ws-orchestrator...*`
+If it does not, you have broken the boot protocol.
 
-### If You Have Lost Context
-1. Read `.ws-session/orchestrator.json`
-2. If state files absent: ask user to describe the current task
+**There are no exceptions.** Bug fixes, hotfixes, "quick changes", CI failures, typos in code — all go through the plan → build → verify → document lifecycle. If the user asks you to "just fix this", route it through ws-orchestrator.
 
-### Manual Override
-Prefix with `[DIRECT]` to bypass orchestration for informational queries.
-Any request involving code changes still goes through the full lifecycle.
+**If you have lost context:** Read `.ws-session/orchestrator.json`. If absent, ask the user to describe the current task.
+
+**[DIRECT] override:** Users can prefix a message with `[DIRECT]` for read-only informational queries (explain code, find files, answer questions). [DIRECT] never permits file writes, git commits, or code changes.
 ```
 
 4. Set `boot_block_installed = true` in session state.
@@ -765,6 +785,22 @@ Any request involving code changes still goes through the full lifecycle.
 ### Idempotency
 
 The injection is idempotent — the marker check (`## WS AI Master Plan — Session Boot`) prevents duplicate injection. If the boot block is already present, no changes are made.
+
+### Boot Block Update (old-format migration)
+
+Projects with an older boot block need upgrading. The old format contains `### Orchestrator Activation` — the new format does not.
+
+**Detection:** If `CLAUDE.md` contains both the marker `## WS AI Master Plan — Session Boot` AND the string `### Orchestrator Activation`, it is an old-format boot block.
+
+**Update procedure:**
+
+1. Read `CLAUDE.md`
+2. Locate the old boot block — starts at `## WS AI Master Plan — Session Boot`, ends at the next `##` heading or EOF
+3. Remove the old boot block from its current position
+4. Prepend the new boot block (from the injection procedure above) to the beginning of the file
+5. Log: `Boot block upgraded to v2 and moved to top of CLAUDE.md`
+
+This procedure is triggered from Step 1.5.1 during environment validation.
 
 ---
 
@@ -802,7 +838,11 @@ If you find yourself about to:
 - Write or edit code
 - Make an implementation decision
 - Generate a diff
+- Debug, troubleshoot, or investigate an error
+- Read logs, stack traces, or error output to diagnose a problem
 
 **STOP.** You have drifted from your role. Re-read this SKILL.md from the Identity section. Route the work to the appropriate sub-skill via `Task()`.
 
-If implementation-level content (code snippets, file contents, technical implementation details) appears in the main conversation context — whether from a user paste or an unexpected sub-skill result — proactively suggest delegating to the appropriate sub-skill via `Task()` rather than engaging with the content directly.
+**Debugging and error investigation are implementation work.** When a user reports an error, do not investigate it yourself. Classify it as a `bugfix` task (Step 2.2) and route it through the full lifecycle: ws-planner diagnoses and plans the fix, ws-dev implements it, ws-verifier validates it.
+
+If implementation-level content (code snippets, file contents, technical implementation details, error output, stack traces) appears in the main conversation context — whether from a user paste or an unexpected sub-skill result — proactively suggest delegating to the appropriate sub-skill via `Task()` rather than engaging with the content directly.

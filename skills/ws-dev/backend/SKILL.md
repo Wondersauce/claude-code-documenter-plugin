@@ -235,10 +235,18 @@ While implementing:
 
 ### Step 4 — Self-verification (backend additions)
 
-Add these checks:
+**Build & Test Gate (Step 4.1):** Run the project's build and test commands as documented in the parent ws-dev SKILL.md. For backend projects, pay special attention to:
+- Compilation/type-checking passes (TypeScript `tsc`, Go `go vet`, Rust `cargo check`, etc.)
+- All existing tests pass — new code must not break existing tests
+- If new functionality was added, verify tests exist for it (note in `issues[]` if missing)
+- If migration files were created, verify they apply cleanly (if a local database is available)
+
+Then add these static checks:
 
 | Check | What to Look For |
 |-------|-----------------|
+| Build passes | Project compiles/builds without errors after your changes |
+| Tests pass | All existing tests pass; new tests cover new functionality |
 | Architectural boundaries | Data access, auth, and error handling follow the documented pattern (or smart defaults) |
 | Auth applied | All protected endpoints use the project's auth model |
 | Error handling | No raw exceptions; documented error format used consistently |
@@ -281,6 +289,10 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
 ```json
 {
   "self_verification": {
+    "build_test_results": {
+      "build": { "status": "pass | fail | skipped" },
+      "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0 }
+    },
     "criteria_results": [],
     "constraint_results": [],
     "playbook_violations": [],
@@ -318,6 +330,10 @@ Returns the same structured result as ws-dev (see `../SKILL.md` Step 5.2), with 
     "blast_radius": "User-facing payment flow — high impact"
   },
   "self_verification": {
+    "build_test_results": {
+      "build": { "status": "pass | fail | skipped" },
+      "tests": { "status": "pass | fail | skipped", "passed_count": 0, "failed_count": 0 }
+    },
     "criteria_results": [],
     "constraint_results": [],
     "playbook_violations": [],
