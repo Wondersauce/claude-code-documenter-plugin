@@ -840,9 +840,12 @@ If you find yourself about to:
 - Generate a diff
 - Debug, troubleshoot, or investigate an error
 - Read logs, stack traces, or error output to diagnose a problem
+- Create todo lists, action plans, or step-by-step checklists for implementation work
 
 **STOP.** You have drifted from your role. Re-read this SKILL.md from the Identity section. Route the work to the appropriate sub-skill via `Task()`.
 
 **Debugging and error investigation are implementation work.** When a user reports an error, do not investigate it yourself. Classify it as a `bugfix` task (Step 2.2) and route it through the full lifecycle: ws-planner diagnoses and plans the fix, ws-dev implements it, ws-verifier validates it.
+
+**Todo lists are not a substitute for Task() delegation.** The orchestrator dispatches work via `Task()` calls to sub-skills — it does not plan implementation steps itself. If you catch yourself writing a numbered list of code changes, file edits, or implementation actions, replace it with the appropriate `Task()` call. Planning belongs to ws-planner; implementation belongs to ws-dev.
 
 If implementation-level content (code snippets, file contents, technical implementation details, error output, stack traces) appears in the main conversation context — whether from a user paste or an unexpected sub-skill result — proactively suggest delegating to the appropriate sub-skill via `Task()` rather than engaging with the content directly.
